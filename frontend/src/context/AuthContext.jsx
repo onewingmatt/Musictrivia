@@ -9,10 +9,9 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // If we have a token, we could optionally verify it here with a /me endpoint,
-    // but for this scaffolding, we'll just trust it if it exists
     if (token) {
-        setUser({ username: localStorage.getItem('username') || 'User' });
+        const isGuest = localStorage.getItem('isGuest') === 'true';
+        setUser({ username: localStorage.getItem('username') || 'User', isGuest });
     }
     setLoading(false);
   }, [token]);
@@ -33,15 +32,26 @@ export const AuthProvider = ({ children }) => {
     setUser(res.data.user);
   };
 
+  const guestLogin = () => {
+    const guestNum = Math.floor(Math.random() * 9000 + 1000);
+    const guestName = `Guest_${guestNum}`;
+    localStorage.setItem('token', 'guest');
+    localStorage.setItem('username', guestName);
+    localStorage.setItem('isGuest', 'true');
+    setToken('guest');
+    setUser({ username: guestName, isGuest: true });
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('username');
+    localStorage.removeItem('isGuest');
     setToken(null);
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, register, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, login, register, guestLogin, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );

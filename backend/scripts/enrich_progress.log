@@ -1,0 +1,53 @@
+Artists to process: 10390
+  Cache has 10 artists already
+  New artists to look up: 10390
+
+Looking up genres (est. 190 min)...
+  [100/10390] Matched: 102, Failed: 8, Remaining: 10290
+  [200/10390] Matched: 197, Failed: 13, Remaining: 10190
+  [300/10390] Matched: 292, Failed: 18, Remaining: 10090
+  [400/10390] Matched: 385, Failed: 25, Remaining: 9990
+  [500/10390] Matched: 480, Failed: 30, Remaining: 9890
+  [600/10390] Matched: 569, Failed: 41, Remaining: 9790
+  [700/10390] Matched: 663, Failed: 47, Remaining: 9690
+  [800/10390] Matched: 752, Failed: 58, Remaining: 9590
+  [900/10390] Matched: 836, Failed: 74, Remaining: 9490
+  [1000/10390] Matched: 925, Failed: 85, Remaining: 9390
+  [1100/10390] Matched: 1002, Failed: 108, Remaining: 9290
+  [1200/10390] Matched: 1093, Failed: 117, Remaining: 9190
+  [1300/10390] Matched: 1181, Failed: 129, Remaining: 9090
+  [1400/10390] Matched: 1267, Failed: 143, Remaining: 8990
+  [1500/10390] Matched: 1354, Failed: 156, Remaining: 8890
+  [1600/10390] Matched: 1438, Failed: 172, Remaining: 8790
+  [1700/10390] Matched: 1524, Failed: 186, Remaining: 8690
+  [1800/10390] Matched: 1607, Failed: 203, Remaining: 8590
+  [1900/10390] Matched: 1677, Failed: 233, Remaining: 8490
+  [2000/10390] Matched: 1765, Failed: 245, Remaining: 8390
+  [2100/10390] Matched: 1848, Failed: 262, Remaining: 8290
+  [2200/10390] Matched: 1939, Failed: 271, Remaining: 8190
+  [2300/10390] Matched: 2012, Failed: 298, Remaining: 8090
+  [2400/10390] Matched: 2085, Failed: 325, Remaining: 7990
+  [2500/10390] Matched: 2165, Failed: 345, Remaining: 7890
+  [2600/10390] Matched: 2256, Failed: 354, Remaining: 7790
+  [2700/10390] Matched: 2332, Failed: 378, Remaining: 7690
+  [2800/10390] Matched: 2403, Failed: 407, Remaining: 7590
+  [2900/10390] Matched: 2476, Failed: 434, Remaining: 7490
+  [3000/10390] Matched: 2557, Failed: 453, Remaining: 7390
+  [3100/10390] Matched: 2646, Failed: 464, Remaining: 7290
+  [3200/10390] Matched: 2696, Failed: 514, Remaining: 7190
+  [3300/10390] Matched: 2761, Failed: 549, Remaining: 7090
+  [3400/10390] Matched: 2838, Failed: 572, Remaining: 6990
+  [3500/10390] Matched: 2919, Failed: 591, Remaining: 6890
+  [3600/10390] Matched: 3005, Failed: 605, Remaining: 6790
+  [3700/10390] Matched: 3065, Failed: 645, Remaining: 6690
+  [3800/10390] Matched: 3138, Failed: 672, Remaining: 6590
+  [3900/10390] Matched: 3223, Failed: 687, Remaining: 6490
+  [4000/10390] Matched: 3284, Failed: 726, Remaining: 6390
+  [4100/10390] Matched: 3346, Failed: 764, Remaining: 6290
+  [4200/10390] Matched: 3429, Failed: 781, Remaining: 6190
+  [4300/10390] Matched: 3518, Failed: 792, Remaining: 6090
+  [4400/10390] Matched: 3574, Failed: 836, Remaining: 5990
+  [4500/10390] Matched: 3645, Failed: 865, Remaining: 5890
+  [4600/10390] Matched: 3732, Failed: 878, Remaining: 5790
+  [4700/10390] Matched: 3788, Failed: 922, Remaining: 5690
+  [4800/10390] Matched: 3860, Failed: 950, Remaining: 5590

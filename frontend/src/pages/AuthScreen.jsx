@@ -6,7 +6,7 @@ const AuthScreen = ({ isLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { login, register } = useContext(AuthContext);
+  const { login, register, guestLogin } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -22,6 +22,11 @@ const AuthScreen = ({ isLogin }) => {
     } catch (err) {
       setError(err.response?.data?.error || 'An error occurred');
     }
+  };
+
+  const handleGuest = () => {
+    guestLogin();
+    navigate('/dashboard');
   };
 
   return (
@@ -65,6 +70,14 @@ const AuthScreen = ({ isLogin }) => {
           ) : (
             <p>Already have an account? <Link to="/login" className="text-blue-600 hover:underline">Log in</Link></p>
           )}
+        </div>
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <button
+            onClick={handleGuest}
+            className="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+          >
+            Play as Guest
+          </button>
         </div>
       </div>
     </div>
