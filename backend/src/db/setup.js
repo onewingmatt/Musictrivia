@@ -2,7 +2,11 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 
-const dbPath = path.resolve(__dirname, 'database.sqlite');
+const dbPath = process.env.DB_PATH || path.resolve(__dirname, 'database.sqlite');
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
 const db = new sqlite3.Database(dbPath);
 
 const initDb = () => {
@@ -31,6 +35,18 @@ const initDb = () => {
         )
       `);
 
+      // Source mappings used by quiz filters
+      db.run(`
+        CREATE TABLE IF NOT EXISTS song_sources (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          song_id INTEGER NOT NULL,
+          source TEXT NOT NULL,
+          source_popularity INTEGER DEFAULT 50,
+          chart_entries INTEGER DEFAULT 1,
+          UNIQUE(song_id, source)
+        )
+      `);
+
       // User Answers table
       db.run(`
         CREATE TABLE IF NOT EXISTS user_answers (
@@ -45,6 +61,18 @@ const initDb = () => {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (user_id) REFERENCES users (id),
           FOREIGN KEY (song_id) REFERENCES songs (id)
+        )
+      `);
+
+      // Saved quiz presets
+      db.run(`
+        CREATE TABLE IF NOT EXISTS quiz_configs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          config_json TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users (id)
         )
       `);
 
@@ -71,8 +99,14 @@ const initDb = () => {
             stmt.run(song);
           });
           stmt.finalize(() => {
-            console.log("Database initialized and seeded.");
-            resolve();
+            const sourceStmt = db.prepare("INSERT OR IGNORE INTO song_sources (song_id, source, source_popularity, chart_entries) VALUES (?, ?, ?, ?)");
+            mockSongs.forEach((song, idx) => {
+              sourceStmt.run(idx + 1, 'billboard-us', song[4], 1);
+            });
+            sourceStmt.finalize(() => {
+              console.log("Database initialized and seeded.");
+              resolve();
+            });
           });
         } else {
           console.log("Database initialized.");

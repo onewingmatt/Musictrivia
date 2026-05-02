@@ -1,0 +1,17 @@
+services:
+  musictrivia:
+    build: .
+    container_name: musictrivia
+    restart: unless-stopped
+    environment:
+      PORT: 3001
+      DB_PATH: /data/database.sqlite
+      FRONTEND_DIST: /app/frontend/dist
+      JWT_SECRET: ${JWT_SECRET:-fallback_secret_key_for_dev}
+    volumes:
+      - musictrivia-data:/data
+    ports:
+      - "3001:3001"
+
+volumes:
+  musictrivia-data:

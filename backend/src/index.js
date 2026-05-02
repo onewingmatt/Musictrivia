@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
 const { initDb } = require('./db/setup');
 
 const authRoutes = require('./routes/auth');
@@ -8,6 +10,7 @@ const userRoutes = require('./routes/user');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const frontendDist = process.env.FRONTEND_DIST || path.resolve(__dirname, '../../frontend/dist');
 
 app.use(cors());
 app.use(express.json());
@@ -17,10 +20,23 @@ app.use('/api/auth', authRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/user', userRoutes);
 
+app.get('/health', (req, res) => {
+    res.json({ ok: true });
+});
+
 // Root
 app.get('/', (req, res) => {
     res.send('Music Trivia API');
 });
+
+if (fs.existsSync(frontendDist)) {
+    app.use(express.static(frontendDist));
+    app.use((req, res, next) => {
+        if (req.method !== 'GET') return next();
+        if (req.path.startsWith('/api/')) return next();
+        res.sendFile(path.join(frontendDist, 'index.html'));
+    });
+}
 
 // Start
 initDb().then(() => {
