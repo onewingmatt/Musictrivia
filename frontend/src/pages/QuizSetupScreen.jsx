@@ -263,7 +263,6 @@ const QuizSetupScreen = () => {
                     <div className="space-y-3">
                         {ALL_SOURCES.map(src => {
                             const count = sourceCounts[src.id] || 0;
-                            if (count === 0 && sourceWeights[src.id] === 0) return null;
                             return (
                                 <div key={src.id} className="flex items-center gap-3">
                                     <span className="w-52 text-sm font-medium text-gray-700 dark:text-gray-300 flex justify-between">

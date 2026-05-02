@@ -5,6 +5,12 @@ const authenticateToken = require('../middleware/auth');
 const levenshtein = require('fast-levenshtein');
 const { execSync } = require('child_process');
 
+const DEFAULT_SOURCES = [
+    { source: 'billboard-us', label: 'Billboard Hot 100 (US)' },
+    { source: 'billboard-canada', label: 'Canadian Hot 100' },
+    { source: 'wikipedia-canada-number-ones', label: 'Canadian #1s (Pre-2007)' },
+];
+
 // Promisified db helpers
 const dbAll = (query, params) => new Promise((resolve, reject) => {
     db.all(query, params, (err, rows) => err ? reject(err) : resolve(rows));
@@ -62,23 +68,38 @@ function resolveYoutubeId(title, artist) {
     const key = `${title}|||${artist}`;
     if (youtubeCache.has(key)) return youtubeCache.get(key);
 
+    const queries = [
+        `${title} ${artist} official audio`,
+        `${title} ${artist} official`,
+        `${title} ${artist}`,
+        `${title} ${artist} vevo`,
+    ];
+
     try {
-        const query = `${title} ${artist} official`;
-        const result = execSync(
-            `yt-dlp --flat-playlist --print id --match-filter 'duration<600' "ytsearch1:${query.replace(/"/g, '\\\\"')}"`,
-            { timeout: 10000, encoding: 'utf8' }
-        ).trim();
-        if (result && result.length === 11) {
-            youtubeCache.set(key, result);
-            // Also update DB
-            db.run("UPDATE songs SET youtube_id = ?, audio_url = ? WHERE title = ? AND artist = ?",
-                [result, result, title, artist]);
-            return result;
+        for (const query of queries) {
+            try {
+                const result = execSync(
+                    `yt-dlp --flat-playlist --print id --match-filter 'duration<600' "ytsearch1:${query.replace(/\"/g, '\\\\\\\"')}"`,
+                    { timeout: 12000, encoding: 'utf8' }
+                ).trim();
+                if (result && result.length === 11) {
+                    youtubeCache.set(key, result);
+                    db.run(
+                        "UPDATE songs SET youtube_id = ?, audio_url = ? WHERE title = ? AND artist = ?",
+                        [result, result, title, artist],
+                        (err) => { if (err) console.error('Failed to persist resolved youtube id', err); }
+                    );
+                    return result;
+                }
+            } catch (inner) {
+                // try next query
+            }
         }
     } catch (e) {
-        // YouTube lookup failed, cache null to avoid retrying
-        youtubeCache.set(key, null);
+        // fall through
     }
+
+    youtubeCache.set(key, null);
     return null;
 }
 
@@ -99,9 +120,13 @@ router.post('/generate', authenticateToken, async (req, res) => {
         const activeSources = Object.entries(source_weights)
             .filter(([, w]) => w > 0)
             .map(([s]) => s);
+        const hasSongSourcesTable = await dbGet(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'song_sources'",
+            []
+        );
 
         let query, params;
-        if (activeSources.length > 0) {
+        if (activeSources.length > 0 && hasSongSourcesTable) {
             query = `SELECT DISTINCT s.* FROM songs s
                      INNER JOIN song_sources ss ON ss.song_id = s.id
                      WHERE s.popularity >= ? AND s.popularity <= ?
@@ -302,15 +327,24 @@ router.get('/decades', (req, res) => {
 
 // Return available sources with counts
 router.get('/sources', (req, res) => {
-    db.all(
-        `SELECT source, COUNT(DISTINCT song_id) as song_count, SUM(chart_entries) as total_entries
-         FROM song_sources GROUP BY source ORDER BY song_count DESC`,
-        [],
-        (err, rows) => {
-            if (err) return res.status(500).json({ error: 'Database error' });
-            res.json({ sources: rows });
+    db.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'song_sources'", [], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row) {
+            return res.json({
+                sources: DEFAULT_SOURCES.map(s => ({ source: s.source, song_count: 0, total_entries: 0 }))
+            });
         }
-    );
+
+        db.all(
+            `SELECT source, COUNT(DISTINCT song_id) as song_count, SUM(chart_entries) as total_entries
+             FROM song_sources GROUP BY source ORDER BY song_count DESC`,
+            [],
+            (err2, rows) => {
+                if (err2) return res.status(500).json({ error: 'Database error' });
+                res.json({ sources: rows });
+            }
+        );
+    });
 });
 
 // Config management

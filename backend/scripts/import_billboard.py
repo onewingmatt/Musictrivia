@@ -188,14 +188,14 @@ def get_youtube_id(song, artist):
 
 
 def import_to_db(songs, db_path, genre_cache=None):
-    """Insert songs into the SQLite database."""
+    """Insert songs and their source rows into the SQLite database."""
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
 
     # Ensure the songs table has the right columns
     c.execute("PRAGMA table_info(songs)")
     columns = {row[1] for row in c.fetchall()}
-    
+
     if 'youtube_id' not in columns:
         c.execute("ALTER TABLE songs ADD COLUMN youtube_id TEXT")
     if 'peak_position' not in columns:
@@ -203,12 +203,27 @@ def import_to_db(songs, db_path, genre_cache=None):
     if 'weeks_on_chart' not in columns:
         c.execute("ALTER TABLE songs ADD COLUMN weeks_on_chart INTEGER")
 
+    # Source table used by the quiz UI filters
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS song_sources (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          song_id INTEGER NOT NULL,
+          source TEXT NOT NULL,
+          source_popularity INTEGER DEFAULT 50,
+          chart_entries INTEGER DEFAULT 1,
+          UNIQUE(song_id, source)
+        )
+    """)
+
     inserted = 0
     skipped = 0
+    source_rows = 0
+    source_name = 'billboard-us'
+
     for s in songs:
         genre = s.get('genre', 'Unknown')
         youtube_id = s.get('youtube_id')
-        
+
         try:
             c.execute(
                 """INSERT OR IGNORE INTO songs 
@@ -221,13 +236,28 @@ def import_to_db(songs, db_path, genre_cache=None):
                 inserted += 1
             else:
                 skipped += 1
+
+            row = c.execute(
+                "SELECT id FROM songs WHERE title = ? AND artist = ? LIMIT 1",
+                [s['song'], s['artist']]
+            ).fetchone()
+            if row:
+                song_id = row[0]
+                c.execute(
+                    """INSERT OR IGNORE INTO song_sources
+                       (song_id, source, source_popularity, chart_entries)
+                       VALUES (?, ?, ?, ?)""",
+                    [song_id, source_name, s['popularity'], max(1, int(s['weeks_on_chart'] or 1))]
+                )
+                if c.rowcount > 0:
+                    source_rows += 1
         except Exception as e:
             print(f"  Error inserting {s['song']}: {e}")
             skipped += 1
 
     conn.commit()
     conn.close()
-    print(f"  Inserted: {inserted}, Skipped (duplicates): {skipped}")
+    print(f"  Inserted: {inserted}, Skipped (duplicates): {skipped}, Source rows: {source_rows}")
 
 
 def main():
