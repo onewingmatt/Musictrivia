@@ -3,6 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { initDb } = require('./db/setup');
+const { startBot } = require('./bot/index');
 
 const authRoutes = require('./routes/auth');
 const quizRoutes = require('./routes/quiz');
@@ -43,6 +44,8 @@ initDb().then(() => {
     app.listen(PORT, () => {
         console.log(`Server running on port ${PORT}`);
     });
+    // Start Discord bot if token is provided
+    startBot();
 }).catch(err => {
     console.error('Failed to initialize database', err);
 });
