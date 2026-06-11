@@ -1,6 +1,8 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder } = require('discord.js');
-const play = require('play-dl');
+const { spawn } = require('child_process');
+const fs = require('fs');
+const ffmpegStatic = require('ffmpeg-static');
 const { db } = require('../db/setup');
 const { isCorrectGuess, resolveYoutubeIdAsync } = require('./utils');
 
@@ -101,9 +103,47 @@ async function playNextQuestion(guildId) {
     gameState.guesses = {}; // Reset guesses for this round
 
     try {
-        const stream = await play.stream(`https://www.youtube.com/watch?v=${currentSong.youtube_id}`);
-        const resource = createAudioResource(stream.stream, { inputType: stream.type });
+        const ytUrl = `https://www.youtube.com/watch?v=${currentSong.youtube_id}`;
+        const cookiePath = "/data/cookies.txt";
+        const extraArgs = [
+            "--js-runtime", "node",
+            "--remote-components", "ejs:github",
+            "--extractor-args", "youtube:player_client=tv",
+            "--extractor-args", "youtubepot-bgutilhttp:base_url=http://bgutil-pot:4416",
+        ];
+        const cookieArg = fs.existsSync(cookiePath) ? ["--cookies", cookiePath] : [];
 
+        const ytdlp = spawn("yt-dlp", [
+            ...cookieArg,
+            ...extraArgs,
+            "-f", "140",
+            "-g", ytUrl,
+        ]);
+
+        let audioUrl = "";
+        ytdlp.stdout.on("data", (data) => {
+            audioUrl += data.toString();
+        });
+
+        await new Promise((resolve, reject) => {
+            ytdlp.on("close", (code) => {
+                if (code === 0 && audioUrl.trim()) resolve();
+                else reject(new Error("yt-dlp exited with code " + code));
+            });
+            ytdlp.on("error", reject);
+        });
+
+        const ffmpeg = spawn(ffmpegStatic, [
+            "-i", audioUrl.trim(),
+            "-f", "s16le",
+            "-ar", "48000",
+            "-ac", "2",
+            "-loglevel", "quiet",
+            "pipe:1",
+        ]);
+        ffmpeg.on("error", (e) => console.error("ffmpeg error:", e));
+
+        const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw, inlineVolume: true });
         gameState.player.play(resource);
 
         const embed = new EmbedBuilder()

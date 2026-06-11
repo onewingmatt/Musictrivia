@@ -8,10 +8,28 @@ services:
       DB_PATH: /data/database.sqlite
       FRONTEND_DIST: /app/frontend/dist
       JWT_SECRET: ${JWT_SECRET:-fallback_secret_key_for_dev}
+      ADMIN_SECRET: ${ADMIN_SECRET:-musictrivia-admin-2026}
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
     volumes:
-      - musictrivia-data:/data
+      - /home/onewing/musictrivia-data:/data
     ports:
       - "3001:3001"
+    networks:
+      - default
+      - pangolin
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.musictrivia.rule=Host(`musictrivia.vps.onewing.top`)"
+      - "traefik.http.routers.musictrivia.entrypoints=websecure"
+      - "traefik.http.routers.musictrivia.tls.certresolver=letsencrypt"
+      - "traefik.http.services.musictrivia.loadbalancer.server.port=3001"
 
-volumes:
-  musictrivia-data:
+  bgutil-pot:
+    image: ghcr.io/jim60105/bgutil-pot:latest
+    container_name: bgutil-pot
+    restart: unless-stopped
+    networks:
+      - default
+networks:
+  pangolin:
+    external: true
