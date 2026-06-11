@@ -19,7 +19,7 @@ ENV NODE_ENV=production
 ENV PORT=3001
 ENV DB_PATH=/data/database.sqlite
 ENV FRONTEND_DIST=/app/frontend/dist
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip ffmpeg && pip3 install --break-system-packages --no-cache-dir requests beautifulsoup4 yt-dlp billboard.py && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip ffmpeg && pip3 install --break-system-packages --no-cache-dir --upgrade 'yt-dlp>=2026.6.0' requests beautifulsoup4 billboard.py bgutil-ytdlp-pot-provider && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /data /app/frontend
 COPY --from=backend-builder /app/backend /app/backend
 COPY --from=backend-builder /app/backend/node_modules /app/backend/node_modules
