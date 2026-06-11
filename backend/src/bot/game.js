@@ -17,23 +17,16 @@ async function getSongs(limit) {
 
             let questions = [];
             for (let r of rows) {
-                if (questions.length >= limit) break;
-
                 let ytId = r.youtube_id || (r.audio_url && r.audio_url.length === 11 ? r.audio_url : null);
-                if (!ytId) {
-                    ytId = await resolveYoutubeIdAsync(r.title, r.artist, r.id);
-                }
-
-                if (ytId) {
-                    questions.push({
-                        id: r.id,
-                        title: r.title,
-                        artist: r.artist,
-                        youtube_id: ytId,
-                        genre: r.genre,
-                        decade: r.decade
-                    });
-                }
+                if (!ytId) continue;
+                questions.push({
+                    id: r.id,
+                    title: r.title,
+                    artist: r.artist,
+                    youtube_id: ytId,
+                    genre: r.genre,
+                    decade: r.decade
+                });
             }
             resolve(questions);
         });

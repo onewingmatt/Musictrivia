@@ -1,5 +1,4 @@
 const levenshtein = require('fast-levenshtein');
-const play = require('play-dl');
 const { db } = require('../db/setup');
 
 const normalize = (s) => s.trim().toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
@@ -32,35 +31,7 @@ const isCorrectGuess = (guess, actual, threshold = 0.25) => {
     return false;
 };
 
-const resolveYoutubeIdAsync = async (title, artist, songId) => {
-    const queries = [
-        `${title} ${artist} official audio`,
-        `${title} ${artist} official`,
-        `${title} ${artist}`,
-        `${title} ${artist} vevo`,
-    ];
-
-    for (const query of queries) {
-        try {
-            const result = await play.search(query, { limit: 1 });
-            if (result && result.length > 0 && result[0].id) {
-                // play-dl search usually returns objects with an `id`
-                const ytId = result[0].id;
-                // Double check it's 11 chars
-                if (ytId.length === 11) {
-                    return new Promise((resolve) => {
-                        db.run(`UPDATE songs SET youtube_id = ? WHERE id = ?`, [ytId, songId], () => {
-                            resolve(ytId);
-                        });
-                    });
-                }
-            }
-        } catch (e) {
-            continue;
-        }
-    }
-    return null;
-};
+const resolveYoutubeIdAsync = async () => null;
 
 module.exports = {
     isCorrectGuess,
