@@ -168,60 +168,65 @@ async function playNextQuestion(guildId) {
         ytdlp.stdout.pipe(ffmpeg.stdin);
 
         const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw, inlineVolume: true });
+
+        // Send a loading message first, update when audio starts
+        const loadingMsg = await gameState.channel.send(`Loading audio for **${currentSong.title}**...`);
+
         gameState.player.play(resource);
 
-        const embed = new EmbedBuilder()
-            .setTitle(`Question ${gameState.currentIdx + 1} of ${gameState.questions.length}`)
-            .setDescription(`Playing audio for **${gameState.duration} seconds**! Make your guess.`)
-            .setColor('#0099ff');
+        // Start the timer when audio actually begins playing
+        gameState.player.once(AudioPlayerStatus.Playing, async () => {
+            const embed = new EmbedBuilder()
+                .setTitle(`Question ${gameState.currentIdx + 1} of ${gameState.questions.length}`)
+                .setDescription(`Playing audio for **${gameState.duration} seconds**! Make your guess.`)
+                .setColor('#0099ff');
 
-        const guessButton = new ButtonBuilder()
-            .setCustomId('guess_button')
-            .setLabel('Make a Guess')
-            .setStyle(ButtonStyle.Primary);
+            const guessButton = new ButtonBuilder()
+                .setCustomId('guess_button')
+                .setLabel('Make a Guess')
+                .setStyle(ButtonStyle.Primary);
 
-        const row = new ActionRowBuilder().addComponents(guessButton);
+            const row = new ActionRowBuilder().addComponents(guessButton);
 
-        const message = await gameState.channel.send({ embeds: [embed], components: [row] });
+            await loadingMsg.edit({ embeds: [embed], components: [row] });
 
-        // Set up collector for the button
-        const filter = i => i.customId === 'guess_button';
-        gameState.collector = message.createMessageComponentCollector({ filter, time: gameState.duration * 1000 });
+            // Set up collector for the button
+            const filter = i => i.customId === 'guess_button';
+            gameState.collector = loadingMsg.createMessageComponentCollector({ filter, time: gameState.duration * 1000 });
 
-        gameState.collector.on('collect', async i => {
-            const modal = new ModalBuilder()
-                .setCustomId('guess_modal')
-                .setTitle('Make Your Guess');
+            gameState.collector.on('collect', async i => {
+                const modal = new ModalBuilder()
+                    .setCustomId('guess_modal')
+                    .setTitle('Make Your Guess');
 
-            const titleInput = new TextInputBuilder()
-                .setCustomId('guess_title')
-                .setLabel("Song Title")
-                .setStyle(TextInputStyle.Short)
-                .setRequired(false);
+                const titleInput = new TextInputBuilder()
+                    .setCustomId('guess_title')
+                    .setLabel("Song Title")
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(false);
 
-            const artistInput = new TextInputBuilder()
-                .setCustomId('guess_artist')
-                .setLabel("Artist Name")
-                .setStyle(TextInputStyle.Short)
-                .setRequired(false);
+                const artistInput = new TextInputBuilder()
+                    .setCustomId('guess_artist')
+                    .setLabel("Artist Name")
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(false);
 
-            const firstActionRow = new ActionRowBuilder().addComponents(titleInput);
-            const secondActionRow = new ActionRowBuilder().addComponents(artistInput);
+                const firstActionRow = new ActionRowBuilder().addComponents(titleInput);
+                const secondActionRow = new ActionRowBuilder().addComponents(artistInput);
 
-            modal.addComponents(firstActionRow, secondActionRow);
-            await i.showModal(modal);
-        });
+                modal.addComponents(firstActionRow, secondActionRow);
+                await i.showModal(modal);
+            });
 
-        // Setup a timer to stop the audio and grade
-        setTimeout(async () => {
-            if (gameState.player.state.status === AudioPlayerStatus.Playing) {
+            // Stop audio after duration
+            setTimeout(async () => {
                 gameState.player.stop();
-            }
-            if (gameState.collector) {
-                gameState.collector.stop();
-            }
-            await gradeAndShowResults(guildId, message, currentSong);
-        }, gameState.duration * 1000);
+                if (gameState.collector) {
+                    gameState.collector.stop();
+                }
+                await gradeAndShowResults(guildId, loadingMsg, currentSong);
+            }, gameState.duration * 1000);
+        });
 
     } catch (e) {
         console.error('Failed to play stream', e);
