@@ -107,8 +107,8 @@ async function getSongs(limit, genre, decades, equalDecades, popMin, popMax) {
             }
             resolve(questions);
         });
+    });
 }
-
 async function startGame(interaction, options) {
     const guildId = interaction.guildId;
     if (activeGames.has(guildId)) {
