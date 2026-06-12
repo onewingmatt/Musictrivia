@@ -24,6 +24,11 @@ module.exports = {
                         .setDescription('Seconds after clip to submit guesses (default: 20)')
                         .setMinValue(5)
                         .setMaxValue(60))
+                .addIntegerOption(option =>
+                    option.setName('repeat')
+                        .setDescription('How many times to play the clip (default: 1)')
+                        .setMinValue(1)
+                        .setMaxValue(3))
         )
         .addSubcommand(subcommand =>
             subcommand
@@ -38,6 +43,7 @@ module.exports = {
             const limit = interaction.options.getInteger('limit') || 5;
             const duration = interaction.options.getInteger('duration') || 20;
             const window = interaction.options.getInteger('answer') || 20;
+            const repeat = interaction.options.getInteger('repeat') || 1;
 
             const member = interaction.member;
             if (!member.voice.channel) {
@@ -46,7 +52,7 @@ module.exports = {
 
             await interaction.deferReply();
             try {
-                await startGame(interaction, { limit, duration, window });
+                await startGame(interaction, { limit, duration, window, repeat });
             } catch (error) {
                 console.error(error);
                 await interaction.editReply({ content: 'Failed to start the game. An error occurred.' });

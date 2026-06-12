@@ -75,7 +75,7 @@ async function startGame(interaction, options) {
         return interaction.editReply('A game is already running in this server!');
     }
 
-    const { limit, duration, window: answerWindow } = options;
+    const { limit, duration, window: answerWindow, repeat } = options;
     const channel = interaction.member.voice.channel;
 
     const connection = joinVoiceChannel({
@@ -98,6 +98,7 @@ async function startGame(interaction, options) {
         guesses: {}, // userId -> { title, artist } for current question
         duration,
         answerWindow,
+        repeat,
         limit,
         collector: null
     };
@@ -153,8 +154,8 @@ async function playNextQuestion(guildId) {
             ytUrl,
         ]);
         ytdlp.on("error", (e) => console.error("yt-dlp error:", e.message));
-
         const ffmpeg = spawn(ffmpegStatic, [
+            "-stream_loop", String(gameState.repeat - 1),
             "-i", "pipe:0",
             "-c:a", "libopus",
             "-b:a", "128k",
@@ -174,14 +175,12 @@ async function playNextQuestion(guildId) {
 
         const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.OggOpus, inlineVolume: true });
 
-        // Send a loading message first, update when audio starts
         const loadingMsg = await gameState.channel.send(`:musical_note: Loading question ${gameState.currentIdx + 1} of ${gameState.questions.length}...`);
 
-        // Register event listener BEFORE playing to avoid race condition
         gameState.player.once(AudioPlayerStatus.Playing, async () => {
             const embed = new EmbedBuilder()
                 .setTitle(`Question ${gameState.currentIdx + 1} of ${gameState.questions.length}`)
-                .setDescription(`:musical_note: Playing for **${gameState.duration}s** — you have **${gameState.answerWindow}s** after to guess!`)
+                .setDescription(`:musical_note: Playing ${gameState.repeat}x for **${gameState.duration}s** — **${gameState.answerWindow}s** to guess!`)
                 .setColor('#0099ff');
 
             const guessButton = new ButtonBuilder()
@@ -193,8 +192,7 @@ async function playNextQuestion(guildId) {
 
             await loadingMsg.edit({ embeds: [embed], components: [row] });
 
-            // Set up collector for the button
-            const totalRound = (gameState.duration + gameState.answerWindow) * 1000;
+            const totalRound = (gameState.duration * gameState.repeat + gameState.answerWindow) * 1000;
             const filter = i => i.customId === 'guess_button';
             gameState.collector = loadingMsg.createMessageComponentCollector({ filter, time: totalRound });
 
@@ -222,18 +220,18 @@ async function playNextQuestion(guildId) {
                 await i.showModal(modal);
             });
 
-            // Stop audio after clip duration
-            setTimeout(() => gameState.player.stop(), gameState.duration * 1000);
+            const clipTime = gameState.duration * gameState.repeat * 1000;
+            setTimeout(() => gameState.player.stop(), clipTime);
 
-            // Grade after clip + answer window
             setTimeout(async () => {
                 if (gameState.collector) gameState.collector.stop();
                 gameState.player.stop();
                 await gradeAndShowResults(guildId, loadingMsg, currentSong);
-            }, (gameState.duration + gameState.answerWindow) * 1000);
+            }, (clipTime + gameState.answerWindow * 1000));
         });
 
         gameState.player.play(resource);
+
 
     } catch (e) {
         console.error('Failed to play stream', e);
