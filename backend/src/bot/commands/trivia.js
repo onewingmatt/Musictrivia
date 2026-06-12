@@ -40,6 +40,16 @@ module.exports = {
                 .addBooleanOption(option =>
                     option.setName('equal_decades')
                         .setDescription('Ignore weights, pick from all decades equally'))
+                .addIntegerOption(option =>
+                    option.setName('popularity_min')
+                        .setDescription('Minimum popularity (1-100, default: 1)')
+                        .setMinValue(1)
+                        .setMaxValue(100))
+                .addIntegerOption(option =>
+                    option.setName('popularity_max')
+                        .setDescription('Maximum popularity (1-100, default: 100)')
+                        .setMinValue(1)
+                        .setMaxValue(100))
         )
         .addSubcommand(subcommand =>
             subcommand
@@ -58,6 +68,8 @@ module.exports = {
             const genre = interaction.options.getString('genre') || '';
             const decadesRaw = interaction.options.getString('decades') || '';
             const equalDecades = interaction.options.getBoolean('equal_decades') || false;
+            const popMin = interaction.options.getInteger('popularity_min') || 1;
+            const popMax = interaction.options.getInteger('popularity_max') || 100;
 
             // Parse decades string "1980:3 1990:5 2000:2" into weights
             let decades = {};
@@ -75,7 +87,7 @@ module.exports = {
 
             await interaction.deferReply();
             try {
-                await startGame(interaction, { limit, duration, window, repeat, genre, decades, equalDecades });
+                await startGame(interaction, { limit, duration, window, repeat, genre, decades, equalDecades, popMin, popMax });
             } catch (error) {
                 console.error(error);
                 await interaction.editReply({ content: 'Failed to start the game. An error occurred.' });

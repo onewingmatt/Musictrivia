@@ -51,10 +51,12 @@ function pickWeighted(items, n, weightFn) {
     return result;
 }
 
-async function getSongs(limit, genre, decades, equalDecades) {
+async function getSongs(limit, genre, decades, equalDecades, popMin, popMax) {
     let where = ['hidden = 0'];
     let params = [];
     if (genre) { where.push('genre = ?'); params.push(genre); }
+    if (popMin && popMin > 1) { where.push('popularity >= ?'); params.push(popMin); }
+    if (popMax && popMax < 100) { where.push('popularity <= ?'); params.push(popMax); }
 
     // If no decades specified, default to all decades equally
     if (!decades || Object.keys(decades).length === 0) {
@@ -109,12 +111,7 @@ async function getSongs(limit, genre, decades, equalDecades) {
 
 async function startGame(interaction, options) {
     const guildId = interaction.guildId;
-    if (activeGames.has(guildId)) {
-        return interaction.editReply('A game is already running in this server!');
-    }
-
-    const { limit, duration, window: answerWindow, repeat, genre, decades, equalDecades } = options;
-    const channel = interaction.member.voice.channel;
+    const { limit, duration, window: answerWindow, repeat, genre, decades, equalDecades, popMin, popMax } = options;
 
     const connection = joinVoiceChannel({
         channelId: channel.id,
@@ -141,12 +138,10 @@ async function startGame(interaction, options) {
         collector: null
     };
 
-    activeGames.set(guildId, gameState);
-
     await interaction.editReply('Fetching songs... Get ready!');
 
     try {
-        const songs = await getSongs(limit, genre, decades, equalDecades);
+        const songs = await getSongs(limit, genre, decades, equalDecades, popMin, popMax);
         if (songs.length === 0) {
             await interaction.followUp('Could not find enough songs to start the game.');
             return stopGame(interaction, true);
