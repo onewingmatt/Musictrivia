@@ -166,6 +166,9 @@ async function playNextQuestion(guildId) {
         ffmpeg.on("error", (e) => console.error("ffmpeg error:", e.message));
         ffmpeg.stderr.on("data", (d) => console.error("ffmpeg stderr:", d.toString().substring(0, 500)));
 
+        ytdlp.stdout.on("error", () => {});
+        ffmpeg.stdin.on("error", () => {});
+        ffmpeg.stdout.on("error", () => {});
         ytdlp.stdout.pipe(ffmpeg.stdin);
 
         const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.OggOpus, inlineVolume: true });
