@@ -155,9 +155,10 @@ async function playNextQuestion(guildId) {
 
         const ffmpeg = spawn(ffmpegStatic, [
             "-i", "pipe:0",
-            "-f", "s16le",
-            "-ar", "48000",
-            "-ac", "2",
+            "-c:a", "libopus",
+            "-b:a", "128k",
+            "-f", "opus",
+            "-application", "audio",
             "-loglevel", "quiet",
             "-err_detect", "ignore_err",
             "pipe:1",
@@ -167,14 +168,12 @@ async function playNextQuestion(guildId) {
 
         ytdlp.stdout.pipe(ffmpeg.stdin);
 
-        const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw, inlineVolume: true });
+        const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.OggOpus, inlineVolume: true });
 
         // Send a loading message first, update when audio starts
         const loadingMsg = await gameState.channel.send(`:musical_note: Loading question ${gameState.currentIdx + 1} of ${gameState.questions.length}...`);
 
-        gameState.player.play(resource);
-
-        // Start the timer when audio actually begins playing
+        // Register event listener BEFORE playing to avoid race condition
         gameState.player.once(AudioPlayerStatus.Playing, async () => {
             const embed = new EmbedBuilder()
                 .setTitle(`Question ${gameState.currentIdx + 1} of ${gameState.questions.length}`)
@@ -227,6 +226,8 @@ async function playNextQuestion(guildId) {
                 await gradeAndShowResults(guildId, loadingMsg, currentSong);
             }, gameState.duration * 1000);
         });
+
+        gameState.player.play(resource);
 
     } catch (e) {
         console.error('Failed to play stream', e);
