@@ -148,41 +148,24 @@ async function playNextQuestion(guildId) {
             ...cookieArg,
             ...extraArgs,
             "-f", "140",
-            "-g", ytUrl,
+            "-o", "-",
+            ytUrl,
         ]);
+        ytdlp.on("error", (e) => console.error("yt-dlp error:", e.message));
 
-        let audioUrl = "";
-        ytdlp.stdout.on("data", (data) => {
-            audioUrl += data.toString();
-        });
-        let ytdlpStderr = "";
-        ytdlp.stderr.on("data", (data) => {
-            ytdlpStderr += data.toString();
-        });
-
-        await new Promise((resolve, reject) => {
-            ytdlp.on("close", (code) => {
-                if ((code === 0 || code === null) && audioUrl.trim()) resolve();
-                else {
-                    console.error("yt-dlp exit code:", code, "for", currentSong.youtube_id || currentSong.audio_url);
-                    console.error("yt-dlp stderr:", (ytdlpStderr || "(empty)").substring(0, 2000));
-                    reject(new Error("yt-dlp exited with code " + code));
-                }
-            });
-            ytdlp.on("error", (e) => {
-                console.error("yt-dlp spawn error:", e.message);
-                reject(e);
-            });
-        });
         const ffmpeg = spawn(ffmpegStatic, [
-            "-i", audioUrl.trim(),
+            "-i", "pipe:0",
             "-f", "s16le",
             "-ar", "48000",
             "-ac", "2",
             "-loglevel", "quiet",
+            "-err_detect", "ignore_err",
             "pipe:1",
         ]);
-        ffmpeg.on("error", (e) => console.error("ffmpeg error:", e));
+        ffmpeg.on("error", (e) => console.error("ffmpeg error:", e.message));
+        ffmpeg.stderr.on("data", (d) => console.error("ffmpeg stderr:", d.toString().substring(0, 500)));
+
+        ytdlp.stdout.pipe(ffmpeg.stdin);
 
         const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw, inlineVolume: true });
         gameState.player.play(resource);
