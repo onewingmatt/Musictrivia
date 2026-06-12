@@ -33,14 +33,31 @@ for (const file of commandFiles) {
 client.once('ready', async () => {
     console.log(`Discord bot logged in as ${client.user.tag}`);
 
-    // Register slash commands globally (or per guild if preferred for immediate updates)
+    // Log available guilds for GUILD_ID discovery
+    const guilds = client.guilds.cache.map(g => `${g.name} (${g.id})`);
+    if (guilds.length > 0) console.log('Guilds:', guilds.join(', '));
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+    const guildId = process.env.GUILD_ID;
+
+    // Clear old global commands (they cache for hours)
+    try {
+        const globalCommands = await rest.get(Routes.applicationCommands(client.user.id));
+        for (const cmd of globalCommands) {
+            await rest.delete(Routes.applicationCommand(client.user.id, cmd.id));
+        }
+        if (globalCommands.length > 0) console.log(`Cleared ${globalCommands.length} stale global commands`);
+    } catch (e) { /* ignore */ }
+
+    // Register guild commands (instant)
+    if (!guildId) {
+        console.log('No GUILD_ID set — commands registered globally (may take 1h to update)');
+    }
+    const route = guildId
+        ? Routes.applicationGuildCommands(client.user.id, guildId)
+        : Routes.applicationCommands(client.user.id);
     try {
         console.log(`Started refreshing ${commandsToRegister.length} application (/) commands.`);
-        const data = await rest.put(
-            Routes.applicationCommands(client.user.id),
-            { body: commandsToRegister },
-        );
+        const data = await rest.put(route, { body: commandsToRegister });
         console.log(`Successfully reloaded ${data.length} application (/) commands.`);
     } catch (error) {
         console.error('Error registering slash commands:', error);

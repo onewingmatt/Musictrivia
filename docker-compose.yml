@@ -11,6 +11,7 @@ services:
       ADMIN_SECRET: ${ADMIN_SECRET:-musictrivia-admin-2026}
       DISCORD_TOKEN: ${DISCORD_TOKEN}
       YT_PROXY: ${YT_PROXY-}
+      GUILD_ID: ${GUILD_ID-}
     volumes:
       - /home/onewing/musictrivia-data:/data
     ports:
