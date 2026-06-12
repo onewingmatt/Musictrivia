@@ -7,7 +7,7 @@ RUN npm run build
 
 FROM node:22-bookworm AS backend-builder
 WORKDIR /app/backend
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ libopus-dev && rm -rf /var/lib/apt/lists/*
 COPY backend/package*.json ./
 ENV npm_config_build_from_source=true
 RUN npm install
