@@ -19,6 +19,11 @@ module.exports = {
                         .setDescription('Duration to play each song in seconds (default: 20)')
                         .setMinValue(5)
                         .setMaxValue(60))
+                .addIntegerOption(option =>
+                    option.setName('answer')
+                        .setDescription('Seconds after clip to submit guesses (default: 20)')
+                        .setMinValue(5)
+                        .setMaxValue(60))
         )
         .addSubcommand(subcommand =>
             subcommand
@@ -32,6 +37,7 @@ module.exports = {
         if (subcommand === 'start') {
             const limit = interaction.options.getInteger('limit') || 5;
             const duration = interaction.options.getInteger('duration') || 20;
+            const window = interaction.options.getInteger('answer') || 20;
 
             const member = interaction.member;
             if (!member.voice.channel) {
@@ -40,7 +46,7 @@ module.exports = {
 
             await interaction.deferReply();
             try {
-                await startGame(interaction, { limit, duration });
+                await startGame(interaction, { limit, duration, window });
             } catch (error) {
                 console.error(error);
                 await interaction.editReply({ content: 'Failed to start the game. An error occurred.' });

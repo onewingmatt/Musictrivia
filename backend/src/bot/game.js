@@ -75,7 +75,7 @@ async function startGame(interaction, options) {
         return interaction.editReply('A game is already running in this server!');
     }
 
-    const { limit, duration } = options;
+    const { limit, duration, window: answerWindow } = options;
     const channel = interaction.member.voice.channel;
 
     const connection = joinVoiceChannel({
@@ -97,6 +97,7 @@ async function startGame(interaction, options) {
         scores: {}, // userId -> score
         guesses: {}, // userId -> { title, artist } for current question
         duration,
+        answerWindow,
         limit,
         collector: null
     };
@@ -180,7 +181,7 @@ async function playNextQuestion(guildId) {
         gameState.player.once(AudioPlayerStatus.Playing, async () => {
             const embed = new EmbedBuilder()
                 .setTitle(`Question ${gameState.currentIdx + 1} of ${gameState.questions.length}`)
-                .setDescription(`Playing audio for **${gameState.duration} seconds**! Make your guess.`)
+                .setDescription(`:musical_note: Playing for **${gameState.duration}s** — you have **${gameState.answerWindow}s** after to guess!`)
                 .setColor('#0099ff');
 
             const guessButton = new ButtonBuilder()
@@ -193,8 +194,9 @@ async function playNextQuestion(guildId) {
             await loadingMsg.edit({ embeds: [embed], components: [row] });
 
             // Set up collector for the button
+            const totalRound = (gameState.duration + gameState.answerWindow) * 1000;
             const filter = i => i.customId === 'guess_button';
-            gameState.collector = loadingMsg.createMessageComponentCollector({ filter, time: gameState.duration * 1000 });
+            gameState.collector = loadingMsg.createMessageComponentCollector({ filter, time: totalRound });
 
             gameState.collector.on('collect', async i => {
                 const modal = new ModalBuilder()
@@ -220,14 +222,15 @@ async function playNextQuestion(guildId) {
                 await i.showModal(modal);
             });
 
-            // Stop audio after duration
+            // Stop audio after clip duration
+            setTimeout(() => gameState.player.stop(), gameState.duration * 1000);
+
+            // Grade after clip + answer window
             setTimeout(async () => {
+                if (gameState.collector) gameState.collector.stop();
                 gameState.player.stop();
-                if (gameState.collector) {
-                    gameState.collector.stop();
-                }
                 await gradeAndShowResults(guildId, loadingMsg, currentSong);
-            }, gameState.duration * 1000);
+            }, (gameState.duration + gameState.answerWindow) * 1000);
         });
 
         gameState.player.play(resource);
