@@ -8,8 +8,11 @@ const { isCorrectGuess } = require('./utils');
 
 // Map to track active games per guild
 const activeGames = new Map();
+const YT_PROXY = process.env.YT_PROXY || '';
+
 
 function searchYoutube(title, artist) {
+    const proxyArg = YT_PROXY ? ['--proxy', YT_PROXY] : [];
     const queries = [
         `${title} ${artist} official audio`,
         `${title} ${artist} official`,
@@ -18,6 +21,7 @@ function searchYoutube(title, artist) {
     for (const query of queries) {
         try {
             const result = require('child_process').spawnSync('yt-dlp', [
+                ...proxyArg,
                 '--flat-playlist', '--print', 'id',
                 '--match-filter', 'duration<600',
                 `ytsearch1:${query}`,
@@ -136,9 +140,11 @@ async function playNextQuestion(guildId) {
             "--extractor-args", "youtube:player_client=tv",
             "--extractor-args", "youtubepot-bgutilhttp:base_url=http://bgutil-pot:4416",
         ];
+        const proxyArg = YT_PROXY ? ["--proxy", YT_PROXY] : [];
         const cookieArg = fs.existsSync(cookiePath) ? ["--cookies", cookiePath] : [];
 
         const ytdlp = spawn("yt-dlp", [
+            ...proxyArg,
             ...cookieArg,
             ...extraArgs,
             "-f", "140",

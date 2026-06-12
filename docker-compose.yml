@@ -10,6 +10,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-fallback_secret_key_for_dev}
       ADMIN_SECRET: ${ADMIN_SECRET:-musictrivia-admin-2026}
       DISCORD_TOKEN: ${DISCORD_TOKEN}
+      YT_PROXY: ${YT_PROXY-}
     volumes:
       - /home/onewing/musictrivia-data:/data
     ports:
