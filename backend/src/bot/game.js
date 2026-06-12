@@ -34,20 +34,47 @@ function searchYoutube(title, artist) {
     return null;
 }
 
-async function getSongs(limit, genre, decade) {
+function pickWeighted(items, n, weightFn) {
+    if (items.length <= n) return items.slice();
+    const total = items.reduce((s, it) => s + weightFn(it), 0);
+    const result = [];
+    const remaining = items.slice();
+    for (let i = 0; i < n && remaining.length > 0; i++) {
+        let r = Math.random() * total;
+        let idx = 0;
+        while (idx < remaining.length - 1 && r > weightFn(remaining[idx])) {
+            r -= weightFn(remaining[idx]);
+            idx++;
+        }
+        result.push(remaining[idx]);
+    }
+    return result;
+}
+
+async function getSongs(limit, genre, decades, equalDecades) {
     let where = ['hidden = 0'];
     let params = [];
     if (genre) { where.push('genre = ?'); params.push(genre); }
-    if (decade) { where.push('decade = ?'); params.push(decade); }
-    params.push(limit * 5);
+    if (decades && Object.keys(decades).length > 0 && !equalDecades) {
+        const keys = Object.keys(decades);
+        where.push(`decade IN (${keys.map(() => '?').join(',')})`);
+        params.push(...keys.map(Number));
+    }
+    params.push(limit * 20);
 
     return new Promise((resolve, reject) => {
         db.all(`SELECT id, title, artist, genre, decade, audio_url, youtube_id FROM songs WHERE ${where.join(' AND ')} ORDER BY RANDOM() LIMIT ?`, params, async (err, rows) => {
             if (err) return reject(err);
             if (!rows || rows.length === 0) return resolve([]);
 
+            // Weighted decade sampling
+            let pool = rows;
+            if (decades && Object.keys(decades).length > 0 && !equalDecades) {
+                pool = pickWeighted(rows, limit * 10, r => decades[r.decade] || 0);
+            }
+
             let questions = [];
-            for (let r of rows) {
+            for (let r of pool) {
                 if (questions.length >= limit) break;
 
                 let ytId = r.youtube_id || r.audio_url || null;
@@ -80,7 +107,7 @@ async function startGame(interaction, options) {
         return interaction.editReply('A game is already running in this server!');
     }
 
-    const { limit, duration, window: answerWindow, repeat, genre, decade } = options;
+    const { limit, duration, window: answerWindow, repeat, genre, decades, equalDecades } = options;
     const channel = interaction.member.voice.channel;
 
     const connection = joinVoiceChannel({
@@ -112,8 +139,7 @@ async function startGame(interaction, options) {
 
     await interaction.editReply('Fetching songs... Get ready!');
 
-    try {
-        const songs = await getSongs(limit, genre, decade);
+        const songs = await getSongs(limit, genre, decades, equalDecades);
         if (songs.length === 0) {
             await interaction.followUp('Could not find enough songs to start the game.');
             return stopGame(interaction, true);

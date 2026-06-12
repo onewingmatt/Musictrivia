@@ -33,20 +33,14 @@ module.exports = {
                     option.setName('genre')
                         .setDescription('Genre filter (e.g. Rock, Hip Hop, Jazz)')
                         .setMaxLength(50))
-                .addIntegerOption(option =>
-                    option.setName('decade')
-                        .setDescription('Decade filter (e.g. 1980, 1990, 2000)')
-                        .setMinValue(1950)
-                        .setMaxValue(2030))
-        )
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('stop')
-                .setDescription('Stop the current music trivia game')
-        ),
-
-    async execute(interaction) {
-        const subcommand = interaction.options.getSubcommand();
+                .addStringOption(option =>
+                    option.setName('decades')
+                        .setDescription('Decade weights like "1980:3 1990:5 2000:2" (default: all equal)')
+                        .setMaxLength(100))
+                .addBooleanOption(option =>
+                    option.setName('equal_decades')
+                        .setDescription('Ignore weights, pick from all decades equally')
+                ))
 
         if (subcommand === 'start') {
             const limit = interaction.options.getInteger('limit') || 5;
@@ -54,7 +48,17 @@ module.exports = {
             const window = interaction.options.getInteger('answer') || 20;
             const repeat = interaction.options.getInteger('repeat') || 1;
             const genre = interaction.options.getString('genre') || '';
-            const decade = interaction.options.getInteger('decade') || 0;
+            const decadesRaw = interaction.options.getString('decades') || '';
+            const equalDecades = interaction.options.getBoolean('equal_decades') || false;
+            
+            // Parse decades string "1980:3 1990:5 2000:2" into weights
+            let decades = {};
+            if (decadesRaw) {
+                for (const part of decadesRaw.split(/[,\s]+/)) {
+                    const m = part.match(/^(\d{4})(?::(\d+))?$/);
+                    if (m) decades[m[1]] = parseInt(m[2] || '1');
+                }
+            }
 
             const member = interaction.member;
             if (!member.voice.channel) {
@@ -63,7 +67,7 @@ module.exports = {
 
             await interaction.deferReply();
             try {
-                await startGame(interaction, { limit, duration, window, repeat, genre, decade });
+                await startGame(interaction, { limit, duration, window, repeat, genre, decades, equalDecades });
             } catch (error) {
                 console.error(error);
                 await interaction.editReply({ content: 'Failed to start the game. An error occurred.' });
