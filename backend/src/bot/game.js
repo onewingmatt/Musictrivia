@@ -170,7 +170,7 @@ async function playNextQuestion(guildId) {
         const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw, inlineVolume: true });
 
         // Send a loading message first, update when audio starts
-        const loadingMsg = await gameState.channel.send(`Loading audio for **${currentSong.title}**...`);
+        const loadingMsg = await gameState.channel.send(`:musical_note: Loading question ${gameState.currentIdx + 1} of ${gameState.questions.length}...`);
 
         gameState.player.play(resource);
 
