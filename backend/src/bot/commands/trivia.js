@@ -35,12 +35,20 @@ module.exports = {
                         .setMaxLength(50))
                 .addStringOption(option =>
                     option.setName('decades')
-                        .setDescription('Decade weights like "1980:3 1990:5 2000:2" (default: all equal)')
+                        .setDescription('Decade weights like 1980:3 1990:5 2000:2')
                         .setMaxLength(100))
                 .addBooleanOption(option =>
                     option.setName('equal_decades')
-                        .setDescription('Ignore weights, pick from all decades equally')
-                ))
+                        .setDescription('Ignore weights, pick from all decades equally'))
+        )
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('stop')
+                .setDescription('Stop the current music trivia game')
+        ),
+
+    async execute(interaction) {
+        const subcommand = interaction.options.getSubcommand();
 
         if (subcommand === 'start') {
             const limit = interaction.options.getInteger('limit') || 5;
@@ -50,7 +58,7 @@ module.exports = {
             const genre = interaction.options.getString('genre') || '';
             const decadesRaw = interaction.options.getString('decades') || '';
             const equalDecades = interaction.options.getBoolean('equal_decades') || false;
-            
+
             // Parse decades string "1980:3 1990:5 2000:2" into weights
             let decades = {};
             if (decadesRaw) {
