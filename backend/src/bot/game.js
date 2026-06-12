@@ -71,7 +71,10 @@ async function getSongs(limit, genre, decades, equalDecades, popMin, popMax) {
     params.push(limit * 20);
 
     return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('getSongs timed out after 120s')), 120000);
         db.all(`SELECT id, title, artist, genre, decade, audio_url, youtube_id FROM songs WHERE ${where.join(' AND ')} ORDER BY RANDOM() LIMIT ?`, params, async (err, rows) => {
+            clearTimeout(timer);
+            if (err) return reject(err);
             if (!rows || rows.length === 0) return resolve([]);
 
             let pool = rows;
