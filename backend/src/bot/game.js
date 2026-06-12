@@ -256,12 +256,20 @@ async function playNextQuestion(guildId) {
                 await i.showModal(modal);
             });
 
+            const playStart = Date.now();
+            console.log(`Playing started for Q${gameState.currentIdx+1}, clip=${gameState.duration}s`); // LOG
             const clipTime = gameState.duration * gameState.repeat * 1000;
-            setTimeout(() => gameState.player.stop(), clipTime);
-
+            setTimeout(() => {
+                console.log(`Clip stop fired after ${(Date.now()-playStart)/1000}s`); // LOG
+                gameState.player.stop();
+            }, clipTime);
             setTimeout(async () => {
+                console.log(`Grade fired after ${(Date.now()-playStart)/1000}s`); // LOG
                 if (gameState.collector) gameState.collector.stop();
                 gameState.player.stop();
+            gameState.player.once(AudioPlayerStatus.Idle, () => {
+                console.log(`Player went idle after ${(Date.now()-playStart)/1000}s`); // LOG
+            });
                 await gradeAndShowResults(guildId, loadingMsg, currentSong);
             }, (clipTime + gameState.answerWindow * 1000));
         });
