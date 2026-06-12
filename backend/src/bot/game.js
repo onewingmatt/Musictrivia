@@ -266,6 +266,22 @@ async function playNextQuestion(guildId) {
         gameState.player.play(resource);
 
 
+
+        // Safety timeout: if audio doesn't start within 45s, skip this song
+        const playingTimeout = setTimeout(() => {
+            console.error('Playing event timed out for song', currentSong.youtube_id);
+            if (gameState.player.state.status !== AudioPlayerStatus.Playing) {
+                gameState.player.stop();
+                const failedSong = gameState.questions[gameState.currentIdx];
+                if (failedSong) db.run('UPDATE songs SET hidden = 1 WHERE id = ?', [failedSong.id]);
+                gameState.channel.send(`Song ${gameState.currentIdx + 1} failed to load. Skipping...`);
+                gameState.currentIdx++;
+                setTimeout(() => playNextQuestion(guildId), 2000);
+            }
+        }, 45000);
+
+        // Clear the safety timeout once Playing fires
+        gameState.player.once(AudioPlayerStatus.Playing, () => clearTimeout(playingTimeout));
     } catch (e) {
         console.error('Failed to play stream', e);
         const failedSong = gameState.questions[gameState.currentIdx];
