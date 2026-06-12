@@ -145,6 +145,7 @@ async function startGame(interaction, options) {
 
     await interaction.editReply('Fetching songs... Get ready!');
 
+    try {
         const songs = await getSongs(limit, genre, decades, equalDecades);
         if (songs.length === 0) {
             await interaction.followUp('Could not find enough songs to start the game.');
