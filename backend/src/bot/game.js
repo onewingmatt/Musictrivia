@@ -30,9 +30,10 @@ function searchYoutube(title, artist) {
     return null;
 }
 
+
 async function getSongs(limit) {
     return new Promise((resolve, reject) => {
-        db.all(`SELECT id, title, artist, genre, decade, audio_url, youtube_id FROM songs ORDER BY RANDOM() LIMIT ?`, [limit * 2], async (err, rows) => {
+        db.all(`SELECT id, title, artist, genre, decade, audio_url, youtube_id FROM songs WHERE hidden = 0 ORDER BY RANDOM() LIMIT ?`, [limit * 5], async (err, rows) => {
             if (err) return reject(err);
             if (!rows || rows.length === 0) return resolve([]);
 
@@ -43,20 +44,21 @@ async function getSongs(limit) {
                 let ytId = r.youtube_id || r.audio_url || null;
                 if (!ytId) {
                     ytId = searchYoutube(r.title, r.artist);
-                    if (ytId) {
-                        db.run('UPDATE songs SET youtube_id = ?, audio_url = ? WHERE id = ?', [ytId, ytId, r.id]);
-                    }
                 }
-                if (ytId) {
-                    questions.push({
-                        id: r.id,
-                        title: r.title,
-                        artist: r.artist,
-                        youtube_id: ytId,
-                        genre: r.genre,
-                        decade: r.decade
-                    });
+                if (!ytId) continue;
+
+                if (!r.youtube_id) {
+                    db.run('UPDATE songs SET youtube_id = ?, audio_url = ? WHERE id = ?', [ytId, ytId, r.id]);
                 }
+
+                questions.push({
+                    id: r.id,
+                    title: r.title,
+                    artist: r.artist,
+                    youtube_id: ytId,
+                    genre: r.genre,
+                    decade: r.decade
+                });
             }
             resolve(questions);
         });
@@ -234,6 +236,10 @@ async function playNextQuestion(guildId) {
 
     } catch (e) {
         console.error('Failed to play stream', e);
+        const failedSong = gameState.questions[gameState.currentIdx];
+        if (failedSong) {
+            db.run('UPDATE songs SET hidden = 1 WHERE id = ?', [failedSong.id]);
+        }
         gameState.channel.send(`Error playing song ${gameState.currentIdx + 1}. Skipping...`);
         gameState.currentIdx++;
         setTimeout(() => playNextQuestion(guildId), 2000);
