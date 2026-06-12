@@ -264,13 +264,14 @@ async function playNextQuestion(guildId) {
                 gameState.player.stop();
             }, clipTime);
             setTimeout(async () => {
-                console.log(`Grade fired after ${(Date.now()-playStart)/1000}s`); // LOG
-                if (gameState.collector) gameState.collector.stop();
-                gameState.player.stop();
-            gameState.player.once(AudioPlayerStatus.Idle, () => {
-                console.log(`Player went idle after ${(Date.now()-playStart)/1000}s`); // LOG
-            });
-                await gradeAndShowResults(guildId, loadingMsg, currentSong);
+                try {
+                    if (gameState.collector) gameState.collector.stop();
+                    gameState.player.stop();
+                    console.log(`Grade fired after ${(Date.now()-playStart)/1000}s`); // LOG
+                    await gradeAndShowResults(guildId, loadingMsg, currentSong);
+                } catch (e) {
+                    console.error('Grade timeout error:', e);
+                }
             }, (clipTime + gameState.answerWindow * 1000));
         });
 
