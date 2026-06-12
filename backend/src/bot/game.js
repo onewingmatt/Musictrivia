@@ -107,13 +107,18 @@ async function getSongs(limit, genre, decades, equalDecades, popMin, popMax) {
             }
             resolve(questions);
         });
-    });
 }
 
 async function startGame(interaction, options) {
     const guildId = interaction.guildId;
+    if (activeGames.has(guildId)) {
+        return interaction.editReply('A game is already running in this server!');
+    }
+
     const { limit, duration, window: answerWindow, repeat, genre, decades, equalDecades, popMin, popMax } = options;
     const channel = interaction.member.voice.channel;
+
+    console.log(`startGame: limit=${limit} genre=${genre} decades=${JSON.stringify(decades)} popMin=${popMin}`); // LOG
 
     const connection = joinVoiceChannel({
         channelId: channel.id,
@@ -125,33 +130,29 @@ async function startGame(interaction, options) {
     connection.subscribe(player);
 
     const gameState = {
-        interaction,
-        channel: interaction.channel,
-        voiceConnection: connection,
-        player,
-        questions: [],
-        currentIdx: 0,
-        scores: {},
-        guesses: {},
-        duration,
-        answerWindow,
-        repeat,
-        limit,
-        collector: null
+        interaction, channel, voiceConnection: connection, player,
+        questions: [], currentIdx: 0, scores: {}, guesses: {},
+        duration, answerWindow, repeat, limit, collector: null
     };
+
+    activeGames.set(guildId, gameState);
 
     await interaction.editReply('Fetching songs... Get ready!');
 
+    console.log('Calling getSongs...'); // LOG
     try {
         const songs = await getSongs(limit, genre, decades, equalDecades, popMin, popMax);
+        console.log(`getSongs returned ${songs.length} songs`); // LOG
         if (songs.length === 0) {
+            console.log('No songs found'); // LOG
             await interaction.followUp('Could not find enough songs to start the game.');
             return stopGame(interaction, true);
         }
         gameState.questions = songs;
+        console.log('Starting playNextQuestion'); // LOG
         await playNextQuestion(guildId);
     } catch (e) {
-        console.error(e);
+        console.error('startGame error:', e);
         await interaction.followUp('An error occurred while fetching songs.');
         stopGame(interaction, true);
     }
