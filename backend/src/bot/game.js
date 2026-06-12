@@ -71,11 +71,11 @@ async function getSongs(limit, genre, decades, equalDecades, popMin, popMax) {
     params.push(limit * 20);
 
     return new Promise((resolve, reject) => {
-        db.all(`SELECT id, title, artist, genre, decade, audio_url, youtube_id FROM songs WHERE ${where.join(' AND ')} ORDER BY RANDOM() LIMIT ?`, params, async (err, rows) => {
+        db.all(`SELECT id, title, artist, genre, decade, audio_url, youtube_id FROM songs WHERE ${where.join(' AND ')}
+            ORDER BY (youtube_id IS NOT NULL AND youtube_id != '') DESC, RANDOM() LIMIT ?`, params, async (err, rows) => {
             if (err) return reject(err);
             if (!rows || rows.length === 0) return resolve([]);
 
-            // Weighted decade sampling
             let pool = rows;
             if (decades && Object.keys(decades).length > 0 && !equalDecades) {
                 pool = pickWeighted(rows, limit * 10, r => decades[r.decade] || 0);
