@@ -34,10 +34,15 @@ function searchYoutube(title, artist) {
     return null;
 }
 
+async function getSongs(limit, genre, decade) {
+    let where = ['hidden = 0'];
+    let params = [];
+    if (genre) { where.push('genre = ?'); params.push(genre); }
+    if (decade) { where.push('decade = ?'); params.push(decade); }
+    params.push(limit * 5);
 
-async function getSongs(limit) {
     return new Promise((resolve, reject) => {
-        db.all(`SELECT id, title, artist, genre, decade, audio_url, youtube_id FROM songs WHERE hidden = 0 ORDER BY RANDOM() LIMIT ?`, [limit * 5], async (err, rows) => {
+        db.all(`SELECT id, title, artist, genre, decade, audio_url, youtube_id FROM songs WHERE ${where.join(' AND ')} ORDER BY RANDOM() LIMIT ?`, params, async (err, rows) => {
             if (err) return reject(err);
             if (!rows || rows.length === 0) return resolve([]);
 
@@ -75,7 +80,7 @@ async function startGame(interaction, options) {
         return interaction.editReply('A game is already running in this server!');
     }
 
-    const { limit, duration, window: answerWindow, repeat } = options;
+    const { limit, duration, window: answerWindow, repeat, genre, decade } = options;
     const channel = interaction.member.voice.channel;
 
     const connection = joinVoiceChannel({
@@ -94,8 +99,8 @@ async function startGame(interaction, options) {
         player,
         questions: [],
         currentIdx: 0,
-        scores: {}, // userId -> score
-        guesses: {}, // userId -> { title, artist } for current question
+        scores: {},
+        guesses: {},
         duration,
         answerWindow,
         repeat,
@@ -108,7 +113,7 @@ async function startGame(interaction, options) {
     await interaction.editReply('Fetching songs... Get ready!');
 
     try {
-        const songs = await getSongs(limit);
+        const songs = await getSongs(limit, genre, decade);
         if (songs.length === 0) {
             await interaction.followUp('Could not find enough songs to start the game.');
             return stopGame(interaction, true);

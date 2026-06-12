@@ -29,6 +29,15 @@ module.exports = {
                         .setDescription('How many times to play the clip (default: 1)')
                         .setMinValue(1)
                         .setMaxValue(3))
+                .addStringOption(option =>
+                    option.setName('genre')
+                        .setDescription('Genre filter (e.g. Rock, Hip Hop, Jazz)')
+                        .setMaxLength(50))
+                .addIntegerOption(option =>
+                    option.setName('decade')
+                        .setDescription('Decade filter (e.g. 1980, 1990, 2000)')
+                        .setMinValue(1950)
+                        .setMaxValue(2030))
         )
         .addSubcommand(subcommand =>
             subcommand
@@ -44,6 +53,8 @@ module.exports = {
             const duration = interaction.options.getInteger('duration') || 20;
             const window = interaction.options.getInteger('answer') || 20;
             const repeat = interaction.options.getInteger('repeat') || 1;
+            const genre = interaction.options.getString('genre') || '';
+            const decade = interaction.options.getInteger('decade') || 0;
 
             const member = interaction.member;
             if (!member.voice.channel) {
@@ -52,7 +63,7 @@ module.exports = {
 
             await interaction.deferReply();
             try {
-                await startGame(interaction, { limit, duration, window, repeat });
+                await startGame(interaction, { limit, duration, window, repeat, genre, decade });
             } catch (error) {
                 console.error(error);
                 await interaction.editReply({ content: 'Failed to start the game. An error occurred.' });
