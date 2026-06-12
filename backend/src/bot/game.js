@@ -157,7 +157,7 @@ async function playNextQuestion(guildId) {
             "-i", "pipe:0",
             "-c:a", "libopus",
             "-b:a", "128k",
-            "-f", "opus",
+            "-f", "ogg",
             "-application", "audio",
             "-loglevel", "quiet",
             "-err_detect", "ignore_err",
