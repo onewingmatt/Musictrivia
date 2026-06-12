@@ -55,7 +55,13 @@ async function getSongs(limit, genre, decades, equalDecades) {
     let where = ['hidden = 0'];
     let params = [];
     if (genre) { where.push('genre = ?'); params.push(genre); }
-    if (decades && Object.keys(decades).length > 0 && !equalDecades) {
+
+    // If no decades specified, default to all decades equally
+    if (!decades || Object.keys(decades).length === 0) {
+        decades = { 1950:1, 1960:1, 1970:1, 1980:1, 1990:1, 2000:1, 2010:1, 2020:1 };
+    }
+
+    if (!equalDecades) {
         const keys = Object.keys(decades);
         where.push(`decade IN (${keys.map(() => '?').join(',')})`);
         params.push(...keys.map(Number));
