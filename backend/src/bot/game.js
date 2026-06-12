@@ -4,29 +4,59 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const ffmpegStatic = require('ffmpeg-static');
 const { db } = require('../db/setup');
-const { isCorrectGuess, resolveYoutubeIdAsync } = require('./utils');
+const { isCorrectGuess } = require('./utils');
 
 // Map to track active games per guild
 const activeGames = new Map();
 
+function searchYoutube(title, artist) {
+    const queries = [
+        `${title} ${artist} official audio`,
+        `${title} ${artist} official`,
+        `${title} ${artist}`,
+    ];
+    for (const query of queries) {
+        try {
+            const result = require('child_process').spawnSync('yt-dlp', [
+                '--flat-playlist', '--print', 'id',
+                '--match-filter', 'duration<600',
+                `ytsearch1:${query}`,
+            ], { timeout: 15000, encoding: 'utf8' });
+            if (result.status === 0 && result.stdout.trim().length === 11) {
+                return result.stdout.trim();
+            }
+        } catch (e) { /* try next query */ }
+    }
+    return null;
+}
+
 async function getSongs(limit) {
     return new Promise((resolve, reject) => {
-        db.all(`SELECT * FROM songs WHERE (audio_url IS NOT NULL AND audio_url != '') OR (youtube_id IS NOT NULL AND youtube_id != '') ORDER BY RANDOM() LIMIT ?`, [limit], async (err, rows) => {
+        db.all(`SELECT id, title, artist, genre, decade, audio_url, youtube_id FROM songs ORDER BY RANDOM() LIMIT ?`, [limit * 2], async (err, rows) => {
             if (err) return reject(err);
             if (!rows || rows.length === 0) return resolve([]);
 
             let questions = [];
             for (let r of rows) {
-                const ytId = r.youtube_id || r.audio_url || null;
-                if (!ytId) continue;
-                questions.push({
-                    id: r.id,
-                    title: r.title,
-                    artist: r.artist,
-                    youtube_id: ytId,
-                    genre: r.genre,
-                    decade: r.decade
-                });
+                if (questions.length >= limit) break;
+
+                let ytId = r.youtube_id || r.audio_url || null;
+                if (!ytId) {
+                    ytId = searchYoutube(r.title, r.artist);
+                    if (ytId) {
+                        db.run('UPDATE songs SET youtube_id = ?, audio_url = ? WHERE id = ?', [ytId, ytId, r.id]);
+                    }
+                }
+                if (ytId) {
+                    questions.push({
+                        id: r.id,
+                        title: r.title,
+                        artist: r.artist,
+                        youtube_id: ytId,
+                        genre: r.genre,
+                        decade: r.decade
+                    });
+                }
             }
             resolve(questions);
         });
