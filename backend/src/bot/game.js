@@ -117,15 +117,25 @@ async function playNextQuestion(guildId) {
         ytdlp.stdout.on("data", (data) => {
             audioUrl += data.toString();
         });
+        let ytdlpStderr = "";
+        ytdlp.stderr.on("data", (data) => {
+            ytdlpStderr += data.toString();
+        });
 
         await new Promise((resolve, reject) => {
             ytdlp.on("close", (code) => {
-                if (code === 0 && audioUrl.trim()) resolve();
-                else reject(new Error("yt-dlp exited with code " + code));
+                if ((code === 0 || code === null) && audioUrl.trim()) resolve();
+                else {
+                    console.error("yt-dlp exit code:", code, "for", currentSong.youtube_id || currentSong.audio_url);
+                    console.error("yt-dlp stderr:", (ytdlpStderr || "(empty)").substring(0, 2000));
+                    reject(new Error("yt-dlp exited with code " + code));
+                }
             });
-            ytdlp.on("error", reject);
+            ytdlp.on("error", (e) => {
+                console.error("yt-dlp spawn error:", e.message);
+                reject(e);
+            });
         });
-
         const ffmpeg = spawn(ffmpegStatic, [
             "-i", audioUrl.trim(),
             "-f", "s16le",
