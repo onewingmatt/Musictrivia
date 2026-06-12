@@ -11,13 +11,13 @@ const activeGames = new Map();
 
 async function getSongs(limit) {
     return new Promise((resolve, reject) => {
-        db.all(`SELECT * FROM songs ORDER BY RANDOM() LIMIT ?`, [limit * 2], async (err, rows) => {
+        db.all(`SELECT * FROM songs WHERE (audio_url IS NOT NULL AND audio_url != '') OR (youtube_id IS NOT NULL AND youtube_id != '') ORDER BY RANDOM() LIMIT ?`, [limit], async (err, rows) => {
             if (err) return reject(err);
             if (!rows || rows.length === 0) return resolve([]);
 
             let questions = [];
             for (let r of rows) {
-                let ytId = r.youtube_id || (r.audio_url && r.audio_url.length === 11 ? r.audio_url : null);
+                const ytId = r.youtube_id || r.audio_url || null;
                 if (!ytId) continue;
                 questions.push({
                     id: r.id,
