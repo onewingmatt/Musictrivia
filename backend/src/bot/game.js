@@ -112,6 +112,7 @@ async function getSongs(limit, genre, decades, equalDecades, popMin, popMax) {
 async function startGame(interaction, options) {
     const guildId = interaction.guildId;
     const { limit, duration, window: answerWindow, repeat, genre, decades, equalDecades, popMin, popMax } = options;
+    const channel = interaction.member.voice.channel;
 
     const connection = joinVoiceChannel({
         channelId: channel.id,
