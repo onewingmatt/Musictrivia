@@ -184,7 +184,7 @@ async function playNextQuestion(guildId) {
         const cookieArg = fs.existsSync(cookiePath) ? ["--cookies", cookiePath] : [];
 
         // Random start: get duration and compute a start offset
-        let sectionArg = [];
+        let startOffset = null;
         if (gameState.randomStart) {
             try {
                 const durResult = require('child_process').spawnSync('yt-dlp', [
@@ -198,9 +198,7 @@ async function playNextQuestion(guildId) {
                     const songDuration = parseFloat(durResult.stdout.trim());
                     const maxStart = Math.max(0, songDuration - gameState.duration);
                     if (maxStart > 0) {
-                        const startSec = (Math.random() * maxStart).toFixed(1);
-                        const endSec = (parseFloat(startSec) + gameState.duration).toFixed(1);
-                        sectionArg = ["--download-sections", `*${startSec}-${endSec}`];
+                        startOffset = (Math.random() * maxStart).toFixed(1);
                     }
                 }
             } catch (e) {
@@ -208,34 +206,60 @@ async function playNextQuestion(guildId) {
             }
         }
 
-        const ytdlp = spawn("yt-dlp", [
-            ...proxyArg,
-            ...cookieArg,
-            ...extraArgs,
-            ...sectionArg,
-            "-f", "140",
-            "-o", "-",
-            ytUrl,
-        ]);
-        ytdlp.on("error", (e) => console.error("yt-dlp error:", e.message));
-        const ffmpeg = spawn(ffmpegStatic, [
-            "-stream_loop", String(gameState.repeat - 1),
-            "-i", "pipe:0",
-            "-c:a", "libopus",
-            "-b:a", "128k",
-            "-f", "ogg",
-            "-application", "audio",
-            "-loglevel", "quiet",
-            "-err_detect", "ignore_err",
-            "pipe:1",
-        ]);
+        let ffmpeg;
+        if (startOffset !== null) {
+            // Random start: get direct URL, use ffmpeg seeking instead of --download-sections
+            const urlResult = require('child_process').spawnSync('yt-dlp', [
+                ...proxyArg,
+                ...cookieArg,
+                ...extraArgs,
+                '-g', '-f', '140', ytUrl,
+            ], { timeout: 15000, encoding: 'utf8' });
+            if (urlResult.status !== 0) throw new Error('Failed to get audio URL');
+            const audioUrl = urlResult.stdout.trim().split('\n')[0];
+            console.log(`Random start: offset=${startOffset}s, url=${audioUrl.substring(0,60)}...`);
+            ffmpeg = spawn(ffmpegStatic, [
+                '-ss', String(startOffset),
+                '-t', String(gameState.duration),
+                '-i', audioUrl,
+                '-stream_loop', String(gameState.repeat - 1),
+                '-c:a', 'libopus',
+                '-b:a', '128k',
+                '-f', 'ogg',
+                '-application', 'audio',
+                '-loglevel', 'quiet',
+                '-err_detect', 'ignore_err',
+                'pipe:1',
+            ]);
+        } else {
+            // Non-random-start: pipe yt-dlp output to ffmpeg
+            const ytdlp = spawn("yt-dlp", [
+                ...proxyArg,
+                ...cookieArg,
+                ...extraArgs,
+                "-f", "140",
+                "-o", "-",
+                ytUrl,
+            ]);
+            ytdlp.on("error", (e) => console.error("yt-dlp error:", e.message));
+            ytdlp.stdout.on("error", () => {});
+            ffmpeg = spawn(ffmpegStatic, [
+                "-stream_loop", String(gameState.repeat - 1),
+                "-i", "pipe:0",
+                "-c:a", "libopus",
+                "-b:a", "128k",
+                "-f", "ogg",
+                "-application", "audio",
+                "-loglevel", "quiet",
+                "-err_detect", "ignore_err",
+                "pipe:1",
+            ]);
+            ffmpeg.stdin.on("error", () => {});
+            ytdlp.stdout.pipe(ffmpeg.stdin);
+        }
         ffmpeg.on("error", (e) => console.error("ffmpeg error:", e.message));
         ffmpeg.stderr.on("data", (d) => console.error("ffmpeg stderr:", d.toString().substring(0, 500)));
-
-        ytdlp.stdout.on("error", () => {});
-        ffmpeg.stdin.on("error", () => {});
         ffmpeg.stdout.on("error", () => {});
-        ytdlp.stdout.pipe(ffmpeg.stdin);
 
         const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.OggOpus, inlineVolume: true });
 
@@ -369,7 +393,26 @@ async function gradeAndShowResults(guildId, message, currentSong) {
         .setDescription(resultsText)
         .setColor('#00ff00');
 
-    await gameState.channel.send({ embeds: [embed] });
+    const reportButton = new ButtonBuilder()
+        .setCustomId(`report_${currentSong.id}`)
+        .setLabel('Report Song')
+        .setStyle(ButtonStyle.Danger);
+
+    const row = new ActionRowBuilder().addComponents(reportButton);
+
+    const resultsMsg = await gameState.channel.send({ embeds: [embed], components: [row] });
+
+    // Collector for report button
+    const reportFilter = i => i.customId === `report_${currentSong.id}`;
+    const reportCollector = resultsMsg.createMessageComponentCollector({ filter: reportFilter, time: 60000 });
+    reportCollector.on('collect', async i => {
+        await i.deferReply({ ephemeral: true });
+        db.run('UPDATE songs SET hidden = 1 WHERE id = ?', [currentSong.id], (err) => {
+            if (err) console.error('Failed to hide reported song:', err.message);
+        });
+        await i.editReply({ content: `Song reported. "${currentSong.title}" by ${currentSong.artist} won't appear in future games.`, ephemeral: true });
+        console.log(`Song reported: ${currentSong.title} by ${currentSong.artist} (id=${currentSong.id}) by ${i.user.tag}`);
+    });
 
     gameState.currentIdx++;
     setTimeout(() => playNextQuestion(guildId), 5000); // 5 second pause between questions
