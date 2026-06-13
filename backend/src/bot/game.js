@@ -116,7 +116,7 @@ async function startGame(interaction, options) {
         return interaction.editReply('A game is already running in this server!');
     }
 
-    const { limit, duration, window: answerWindow, repeat, genre, decades, equalDecades, popMin, popMax } = options;
+    const { limit, duration, window: answerWindow, repeat, genre, decades, equalDecades, popMin, popMax, randomStart } = options;
     const channel = interaction.member.voice.channel;
 
     console.log(`startGame: limit=${limit} genre=${genre} decades=${JSON.stringify(decades)} popMin=${popMin}`); // LOG
@@ -133,7 +133,8 @@ async function startGame(interaction, options) {
     const gameState = {
         interaction, channel, voiceConnection: connection, player,
         questions: [], currentIdx: 0, scores: {}, guesses: {},
-        duration, answerWindow, repeat, limit, collector: null
+        duration, answerWindow, repeat, limit, collector: null,
+        randomStart: randomStart || false
     };
 
     activeGames.set(guildId, gameState);
@@ -182,10 +183,36 @@ async function playNextQuestion(guildId) {
         const proxyArg = YT_PROXY ? ["--proxy", YT_PROXY] : [];
         const cookieArg = fs.existsSync(cookiePath) ? ["--cookies", cookiePath] : [];
 
+        // Random start: get duration and compute a start offset
+        let sectionArg = [];
+        if (gameState.randomStart) {
+            try {
+                const durResult = require('child_process').spawnSync('yt-dlp', [
+                    ...proxyArg,
+                    ...cookieArg,
+                    ...extraArgs,
+                    '--print', 'duration',
+                    ytUrl,
+                ], { timeout: 15000, encoding: 'utf8' });
+                if (durResult.status === 0) {
+                    const songDuration = parseFloat(durResult.stdout.trim());
+                    const maxStart = Math.max(0, songDuration - gameState.duration);
+                    if (maxStart > 0) {
+                        const startSec = (Math.random() * maxStart).toFixed(1);
+                        const endSec = (parseFloat(startSec) + gameState.duration).toFixed(1);
+                        sectionArg = ["--download-sections", `*${startSec}-${endSec}`];
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to get duration for random start:', e.message);
+            }
+        }
+
         const ytdlp = spawn("yt-dlp", [
             ...proxyArg,
             ...cookieArg,
             ...extraArgs,
+            ...sectionArg,
             "-f", "140",
             "-o", "-",
             ytUrl,
@@ -217,7 +244,7 @@ async function playNextQuestion(guildId) {
         gameState.player.once(AudioPlayerStatus.Playing, async () => {
             const embed = new EmbedBuilder()
                 .setTitle(`Question ${gameState.currentIdx + 1} of ${gameState.questions.length}`)
-                .setDescription(`:musical_note: Playing ${gameState.repeat}x for **${gameState.duration}s** — **${gameState.answerWindow}s** to guess!`)
+                .setDescription(`:musical_note: Playing ${gameState.repeat}x for **${gameState.duration}s**${gameState.randomStart ? ' (random start)' : ''} — **${gameState.answerWindow}s** to guess!`)
                 .setColor('#0099ff');
 
             const guessButton = new ButtonBuilder()
@@ -332,8 +359,8 @@ async function gradeAndShowResults(guildId, message, currentSong) {
             if (!gameState.scores[userId]) gameState.scores[userId] = 0;
             gameState.scores[userId] += points;
 
-            const user = await gameState.interaction.client.users.fetch(userId);
-            resultsText += `${user.username}: ${points} points (Title: ${isTitleCorrect ? '✅' : '❌'}, Artist: ${isArtistCorrect ? '✅' : '❌'})\n`;
+            const member = await gameState.interaction.guild.members.fetch(userId);
+            resultsText += `${member.displayName}: ${points} points (Title: ${isTitleCorrect ? '✅' : '❌'}, Artist: ${isArtistCorrect ? '✅' : '❌'})\n`;
         }
     }
 
@@ -362,8 +389,8 @@ async function endGame(guildId) {
     } else {
         const sortedScores = Object.entries(gameState.scores).sort(([, a], [, b]) => b - a);
         for (const [userId, score] of sortedScores) {
-            const user = await gameState.interaction.client.users.fetch(userId);
-            finalScores += `${user.username}: ${score} points\n`;
+            const member = await gameState.interaction.guild.members.fetch(userId);
+            finalScores += `${member.displayName}: ${score} points\n`;
         }
     }
 

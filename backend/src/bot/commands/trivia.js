@@ -16,12 +16,12 @@ module.exports = {
                         .setMaxValue(50))
                 .addIntegerOption(option =>
                     option.setName('duration')
-                        .setDescription('Duration to play each song in seconds (default: 20)')
+                        .setDescription('Duration to play each song in seconds (default: 30)')
                         .setMinValue(5)
                         .setMaxValue(60))
                 .addIntegerOption(option =>
                     option.setName('answer')
-                        .setDescription('Seconds after clip to submit guesses (default: 20)')
+                        .setDescription('Seconds after clip to submit guesses (default: 30)')
                         .setMinValue(5)
                         .setMaxValue(60))
                 .addIntegerOption(option =>
@@ -40,6 +40,9 @@ module.exports = {
                 .addBooleanOption(option =>
                     option.setName('equal_decades')
                         .setDescription('Ignore weights, pick from all decades equally'))
+                .addBooleanOption(option =>
+                    option.setName('random_start')
+                        .setDescription('Start each clip at a random point in the song (default: true)'))
                 .addIntegerOption(option =>
                     option.setName('popularity_min')
                         .setDescription('Minimum popularity (1-100, default: 1)')
@@ -62,12 +65,13 @@ module.exports = {
 
         if (subcommand === 'start') {
             const limit = interaction.options.getInteger('limit') || 5;
-            const duration = interaction.options.getInteger('duration') || 20;
-            const window = interaction.options.getInteger('answer') || 20;
+            const duration = interaction.options.getInteger('duration') || 30;
+            const window = interaction.options.getInteger('answer') || 30;
             const repeat = interaction.options.getInteger('repeat') || 1;
             const genre = interaction.options.getString('genre') || '';
             const decadesRaw = interaction.options.getString('decades') || '';
             const equalDecades = interaction.options.getBoolean('equal_decades') || false;
+            const randomStart = interaction.options.getBoolean('random_start') ?? true;
             const popMin = interaction.options.getInteger('popularity_min') || 1;
             const popMax = interaction.options.getInteger('popularity_max') || 100;
 
@@ -87,7 +91,7 @@ module.exports = {
 
             await interaction.deferReply();
             try {
-                await startGame(interaction, { limit, duration, window, repeat, genre, decades, equalDecades, popMin, popMax });
+                await startGame(interaction, { limit, duration, window, repeat, genre, decades, equalDecades, popMin, popMax, randomStart });
             } catch (error) {
                 console.error(error);
                 await interaction.editReply({ content: 'Failed to start the game. An error occurred.' });
