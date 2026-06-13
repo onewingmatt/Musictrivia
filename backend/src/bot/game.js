@@ -205,58 +205,40 @@ async function playNextQuestion(guildId) {
                 console.error('Failed to get duration for random start:', e.message);
             }
         }
+        if (startOffset !== null) console.log(`Random start offset: ${startOffset}s`); // LOG
 
-        let ffmpeg;
+        // Always use yt-dlp pipe to ffmpeg (handles auth, cookies, rate limits)
+        const ytdlp = spawn("yt-dlp", [
+            ...proxyArg,
+            ...cookieArg,
+            ...extraArgs,
+            "-f", "140",
+            "-o", "-",
+            ytUrl,
+        ]);
+        ytdlp.on("error", (e) => console.error("yt-dlp error:", e.message));
+        ytdlp.stdout.on("error", () => {});
+
+        // ffmpeg: pipe input, optional output seeking for random start
+        const ffmpegArgs = [
+            "-stream_loop", String(gameState.repeat - 1),
+            "-i", "pipe:0",
+        ];
         if (startOffset !== null) {
-            // Random start: get direct URL, use ffmpeg seeking instead of --download-sections
-            const urlResult = require('child_process').spawnSync('yt-dlp', [
-                ...proxyArg,
-                ...cookieArg,
-                ...extraArgs,
-                '-g', '-f', '140', ytUrl,
-            ], { timeout: 15000, encoding: 'utf8' });
-            if (urlResult.status !== 0) throw new Error('Failed to get audio URL');
-            const audioUrl = urlResult.stdout.trim().split('\n')[0];
-            console.log(`Random start: offset=${startOffset}s, url=${audioUrl.substring(0,60)}...`);
-            ffmpeg = spawn(ffmpegStatic, [
-                '-ss', String(startOffset),
-                '-t', String(gameState.duration),
-                '-i', audioUrl,
-                '-stream_loop', String(gameState.repeat - 1),
-                '-c:a', 'libopus',
-                '-b:a', '128k',
-                '-f', 'ogg',
-                '-application', 'audio',
-                '-loglevel', 'quiet',
-                '-err_detect', 'ignore_err',
-                'pipe:1',
-            ]);
-        } else {
-            // Non-random-start: pipe yt-dlp output to ffmpeg
-            const ytdlp = spawn("yt-dlp", [
-                ...proxyArg,
-                ...cookieArg,
-                ...extraArgs,
-                "-f", "140",
-                "-o", "-",
-                ytUrl,
-            ]);
-            ytdlp.on("error", (e) => console.error("yt-dlp error:", e.message));
-            ytdlp.stdout.on("error", () => {});
-            ffmpeg = spawn(ffmpegStatic, [
-                "-stream_loop", String(gameState.repeat - 1),
-                "-i", "pipe:0",
-                "-c:a", "libopus",
-                "-b:a", "128k",
-                "-f", "ogg",
-                "-application", "audio",
-                "-loglevel", "quiet",
-                "-err_detect", "ignore_err",
-                "pipe:1",
-            ]);
-            ffmpeg.stdin.on("error", () => {});
-            ytdlp.stdout.pipe(ffmpeg.stdin);
+            ffmpegArgs.push('-ss', String(startOffset)); // output seek (after -i)
         }
+        ffmpegArgs.push(
+            '-c:a', 'libopus',
+            '-b:a', '128k',
+            '-f', 'ogg',
+            '-application', 'audio',
+            '-loglevel', 'quiet',
+            '-err_detect', 'ignore_err',
+            'pipe:1',
+        );
+        const ffmpeg = spawn(ffmpegStatic, ffmpegArgs);
+        ffmpeg.stdin.on("error", () => {});
+        ytdlp.stdout.pipe(ffmpeg.stdin);
         ffmpeg.on("error", (e) => console.error("ffmpeg error:", e.message));
         ffmpeg.stderr.on("data", (d) => console.error("ffmpeg stderr:", d.toString().substring(0, 500)));
         ffmpeg.stdout.on("error", () => {});
