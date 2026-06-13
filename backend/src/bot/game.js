@@ -36,17 +36,18 @@ function searchYoutube(title, artist) {
 
 function pickWeighted(items, n, weightFn) {
     if (items.length <= n) return items.slice();
-    const total = items.reduce((s, it) => s + weightFn(it), 0);
     const result = [];
     const remaining = items.slice();
     for (let i = 0; i < n && remaining.length > 0; i++) {
+        const total = remaining.reduce((s, it) => s + weightFn(it), 0);
+        if (total === 0) break;
         let r = Math.random() * total;
         let idx = 0;
         while (idx < remaining.length - 1 && r > weightFn(remaining[idx])) {
             r -= weightFn(remaining[idx]);
             idx++;
         }
-        result.push(remaining[idx]);
+        result.push(remaining.splice(idx, 1)[0]);
     }
     return result;
 }
