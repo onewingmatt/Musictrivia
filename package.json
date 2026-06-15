@@ -1,19 +1,24 @@
 {
-  "name": "app",
+  "name": "musictrivia",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Music trivia game with web frontend, Discord bot, and Billboard data pipelines",
+  "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "install:all": "npm install --workspace backend --workspace frontend",
+    "build": "npm run build --workspace frontend",
+    "start": "npm start --workspace backend",
+    "dev:backend": "npm run dev --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d --build"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/onewingmatt/Musictrivia.git"
   },
-  "keywords": [],
+  "keywords": ["music", "trivia", "discord", "bot", "quiz"],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "bugs": {
     "url": "https://github.com/onewingmatt/Musictrivia/issues"
   },

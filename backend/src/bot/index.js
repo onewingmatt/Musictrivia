@@ -39,28 +39,26 @@ client.once('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     const guildId = process.env.GUILD_ID;
 
-    // Clear old global commands (they cache for hours)
+    // Always register commands globally (slow cache but covers all servers)
     try {
-        const globalCommands = await rest.get(Routes.applicationCommands(client.user.id));
-        for (const cmd of globalCommands) {
-            await rest.delete(Routes.applicationCommand(client.user.id, cmd.id));
-        }
-        if (globalCommands.length > 0) console.log(`Cleared ${globalCommands.length} stale global commands`);
-    } catch (e) { /* ignore */ }
-
-    // Register guild commands (instant)
-    if (!guildId) {
-        console.log('No GUILD_ID set — commands registered globally (may take 1h to update)');
-    }
-    const route = guildId
-        ? Routes.applicationGuildCommands(client.user.id, guildId)
-        : Routes.applicationCommands(client.user.id);
-    try {
-        console.log(`Started refreshing ${commandsToRegister.length} application (/) commands.`);
-        const data = await rest.put(route, { body: commandsToRegister });
-        console.log(`Successfully reloaded ${data.length} application (/) commands.`);
+        console.log(`Registering ${commandsToRegister.length} global application (/) commands...`);
+        const data = await rest.put(Routes.applicationCommands(client.user.id), { body: commandsToRegister });
+        console.log(`Global commands updated (${data.length} commands)`);
     } catch (error) {
-        console.error('Error registering slash commands:', error);
+        console.error('Error registering global commands:', error);
+    }
+
+    // Also register for a specific guild if GUILD_ID is set (instant, overrides cache)
+    if (guildId) {
+        try {
+            console.log(`Also registering for guild ${guildId} (instant)...`);
+            const data = await rest.put(Routes.applicationGuildCommands(client.user.id, guildId), { body: commandsToRegister });
+            console.log(`Guild commands updated for ${guildId} (${data.length} commands)`);
+        } catch (error) {
+            console.error('Error registering guild commands:', error);
+        }
+    } else {
+        console.log('No GUILD_ID set — global only (may take 1h to update in new servers)');
     }
 });
 

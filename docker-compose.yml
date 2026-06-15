@@ -9,29 +9,22 @@ services:
       FRONTEND_DIST: /app/frontend/dist
       JWT_SECRET: ${JWT_SECRET:-fallback_secret_key_for_dev}
       ADMIN_SECRET: ${ADMIN_SECRET:-musictrivia-admin-2026}
+      # Set DISCORD_TOKEN in .env to enable the Discord bot
       DISCORD_TOKEN: ${DISCORD_TOKEN}
       YT_PROXY: ${YT_PROXY-}
       GUILD_ID: ${GUILD_ID-}
     volumes:
-      - /home/onewing/musictrivia-data:/data
+      - musictrivia-data:/data
     ports:
       - "3001:3001"
-    networks:
-      - default
-      - pangolin
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.musictrivia.rule=Host(`musictrivia.vps.onewing.top`)"
-      - "traefik.http.routers.musictrivia.entrypoints=websecure"
-      - "traefik.http.routers.musictrivia.tls.certresolver=letsencrypt"
-      - "traefik.http.services.musictrivia.loadbalancer.server.port=3001"
 
+  # Optional: PO token provider for YouTube on VPS IPs.
+  # Only needed when YouTube blocks audio downloads from datacenter IPs.
+  # Remove this service if running locally or on a residential connection.
   bgutil-pot:
     image: ghcr.io/jim60105/bgutil-pot:latest
     container_name: bgutil-pot
     restart: unless-stopped
-    networks:
-      - default
-networks:
-  pangolin:
-    external: true
+
+volumes:
+  musictrivia-data:
