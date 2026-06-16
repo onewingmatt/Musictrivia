@@ -39,25 +39,24 @@ client.once('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     const guildId = process.env.GUILD_ID;
 
-    // Always register commands globally (slow cache but covers all servers)
-    try {
-        console.log(`Registering ${commandsToRegister.length} global application (/) commands...`);
-        const data = await rest.put(Routes.applicationCommands(client.user.id), { body: commandsToRegister });
-        console.log(`Global commands updated (${data.length} commands)`);
-    } catch (error) {
-        console.error('Error registering global commands:', error);
-    }
-
-    // Also register for a specific guild if GUILD_ID is set (instant, overrides cache)
+    // If GUILD_ID is set, register guild-scoped only (instant, no duplicates).
+    // Otherwise register globally (slow cache, ~1h propagation).
     if (guildId) {
         try {
-            console.log(`Also registering for guild ${guildId} (instant)...`);
+            console.log(`Registering for guild ${guildId} (instant, guild-scoped)...`);
             const data = await rest.put(Routes.applicationGuildCommands(client.user.id, guildId), { body: commandsToRegister });
             console.log(`Guild commands updated for ${guildId} (${data.length} commands)`);
         } catch (error) {
             console.error('Error registering guild commands:', error);
         }
     } else {
+        try {
+            console.log(`Registering ${commandsToRegister.length} global application (/) commands...`);
+            const data = await rest.put(Routes.applicationCommands(client.user.id), { body: commandsToRegister });
+            console.log(`Global commands updated (${data.length} commands)`);
+        } catch (error) {
+            console.error('Error registering global commands:', error);
+        }
         console.log('No GUILD_ID set — global only (may take 1h to update in new servers)');
     }
 });
