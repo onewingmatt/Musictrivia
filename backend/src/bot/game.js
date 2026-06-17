@@ -177,8 +177,7 @@ async function playNextQuestion(guildId) {
         const extraArgs = [
             "--js-runtime", "node",
             "--remote-components", "ejs:github",
-            "--extractor-args", "youtube:player_client=tv",
-            "--extractor-args", "youtubepot-bgutilhttp:base_url=http://bgutil-pot:4416",
+
         ];
         const proxyArg = YT_PROXY ? ["--proxy", YT_PROXY] : [];
         const cookieArg = fs.existsSync(cookiePath) ? ["--cookies", cookiePath] : [];
@@ -244,6 +243,7 @@ async function playNextQuestion(guildId) {
         ffmpeg.stdout.on("error", () => {});
 
         const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.OggOpus, inlineVolume: true });
+        resource.volume.setVolume(1);
 
         const loadingMsg = await gameState.channel.send(`:musical_note: Loading question ${gameState.currentIdx + 1} of ${gameState.questions.length}...`);
 
@@ -382,25 +382,14 @@ async function gradeAndShowResults(guildId, message, currentSong) {
 
     const row = new ActionRowBuilder().addComponents(reportButton);
 
-    const resultsMsg = await gameState.channel.send({ embeds: [embed], components: [row] });
-
-    // Collector for report button
-    const reportFilter = i => i.customId === `report_${currentSong.id}`;
-    const reportCollector = resultsMsg.createMessageComponentCollector({ filter: reportFilter, time: 60000 });
-    reportCollector.on('collect', async i => {
-        await i.deferReply({ ephemeral: true });
-        db.run('UPDATE songs SET hidden = 1 WHERE id = ?', [currentSong.id], (err) => {
-            if (err) console.error('Failed to hide reported song:', err.message);
-        });
-        await i.editReply({ content: `Song reported. "${currentSong.title}" by ${currentSong.artist} won't appear in future games.`, ephemeral: true });
-        console.log(`Song reported: ${currentSong.title} by ${currentSong.artist} (id=${currentSong.id}) by ${i.user.tag}`);
-    });
+    await gameState.channel.send({ embeds: [embed], components: [row] });
 
     gameState.currentIdx++;
-    setTimeout(() => playNextQuestion(guildId), 5000); // 5 second pause between questions
+    setTimeout(async () => { try { await playNextQuestion(guildId); } catch (e) { console.error("playNext error:", e.message); } }, 5000); // 5 second pause between questions
 }
 
 async function endGame(guildId) {
+    try {
     const gameState = activeGames.get(guildId);
     if (!gameState) return;
 
@@ -425,7 +414,11 @@ async function endGame(guildId) {
         .setColor('#ffcc00');
 
     await gameState.channel.send({ embeds: [embed] });
-    activeGames.delete(guildId);
+    } catch (e) {
+        console.error("endGame error:", e.message);
+        try { await gameState.channel.send({ content: "Game ended, but an error occurred." }); } catch (e2) {}
+    }
+    try { activeGames.delete(guildId); } catch (e) {}
 }
 
 async function stopGame(interaction, quiet = false) {
