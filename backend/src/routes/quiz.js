@@ -112,6 +112,7 @@ router.post('/generate', authenticateToken, async (req, res) => {
             decades = [],
             limit = 10,
             skip_mastered = false,
+            exclude_song_ids = [],
             min_popularity = 0,
             max_popularity = 100
         } = req.body;
@@ -162,6 +163,13 @@ router.post('/generate', authenticateToken, async (req, res) => {
                 WHERE user_id = ? AND is_title_correct = 1 AND is_artist_correct = 1
             )`;
             params.push(req.user.userId);
+        }
+
+        // Exclude recently played song IDs
+        if (exclude_song_ids.length > 0) {
+            const placeholders = exclude_song_ids.map(() => '?').join(',');
+            query += ` AND s.id NOT IN (${placeholders})`;
+            params.push(...exclude_song_ids);
         }
 
         // Fetch more than needed for weighted sampling

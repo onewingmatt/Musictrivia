@@ -105,6 +105,12 @@ const QuizRoundScreen = () => {
             setFeedback(null);
             setHintVisible(false);
         } else {
+            // Save played song IDs to localStorage to avoid repeats
+            const playedIds = questions.map(q => q.id);
+            const existing = JSON.parse(localStorage.getItem('excludeSongIds') || '[]');
+            const merged = [...new Set([...existing, ...playedIds])];
+            // Keep last 200 to avoid unbounded growth
+            localStorage.setItem('excludeSongIds', JSON.stringify(merged.slice(-200)));
             sessionStorage.setItem('quizResults', JSON.stringify(results));
             navigate('/results');
         }
@@ -119,6 +125,12 @@ const QuizRoundScreen = () => {
             setHintVisible(false);
             return;
         }
+
+        // Save played song IDs to localStorage to avoid repeats
+        const playedIds = questions.map(q => q.id);
+        const existing = JSON.parse(localStorage.getItem('excludeSongIds') || '[]');
+        const merged = [...new Set([...existing, ...playedIds])];
+        localStorage.setItem('excludeSongIds', JSON.stringify(merged.slice(-200)));
 
         sessionStorage.setItem('quizResults', JSON.stringify(nextResults));
         navigate('/results');
