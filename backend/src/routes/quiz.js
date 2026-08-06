@@ -380,4 +380,32 @@ router.delete('/configs/:id', authenticateToken, (req, res) => {
     });
 });
 
+// Report a broken/incorrect song (creates a song_reports row for the admin panel)
+router.post('/report', authenticateToken, (req, res) => {
+    const { song_id, reason = 'audio_failed', note = '' } = req.body;
+
+    if (!song_id) return res.status(400).json({ error: 'song_id is required' });
+
+    db.get("SELECT id, title, artist FROM songs WHERE id = ?", [song_id], (err, song) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!song) return res.status(404).json({ error: 'Song not found' });
+
+        db.run(
+            `INSERT INTO song_reports (song_id, user_id, reason, note)
+             VALUES (?, ?, ?, ?)`,
+            [song_id, req.user?.userId || null, reason, note],
+            function(insertErr) {
+                if (insertErr) return res.status(500).json({ error: 'Failed to save report' });
+                res.json({
+                    success: true,
+                    report_id: this.lastID,
+                    song_id: song.id,
+                    title: song.title,
+                    artist: song.artist
+                });
+            }
+        );
+    });
+});
+
 module.exports = router;

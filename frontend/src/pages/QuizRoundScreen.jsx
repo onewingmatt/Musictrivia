@@ -159,6 +159,23 @@ const QuizRoundScreen = () => {
         }
     };
 
+    const handleReportAndSkip = async () => {
+        if (!currentQ) return;
+        if (!window.confirm('Report this song as broken? It will be skipped and the admin can review the report.')) return;
+
+        try {
+            await api.post('/quiz/report', {
+                song_id: currentQ.id,
+                reason: 'audio_failed',
+                note: 'Reported by player',
+            });
+        } catch (err) {
+            console.error('Failed to record song report', err);
+        }
+
+        await handleSkipBrokenSong();
+    };
+
     const handleVolumeChange = (nextVolume) => {
         setVolume(nextVolume);
         localStorage.setItem('quizVolume', String(nextVolume));
@@ -459,6 +476,14 @@ const QuizRoundScreen = () => {
                                         >
                                             {playerPaused ? 'Resume' : 'Pause'}
                                         </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleReportAndSkip}
+                                            disabled={!playerRef.current}
+                                            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white text-sm font-semibold transition"
+                                        >
+                                            Report
+                                        </button>
                                     </div>
                                 </div>
                                 <div className="text-xs text-center text-gray-500 dark:text-gray-400">
@@ -489,6 +514,14 @@ const QuizRoundScreen = () => {
                                             className="px-4 py-2 bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white text-sm font-semibold transition"
                                         >
                                             {playerPaused ? 'Resume' : 'Pause'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleReportAndSkip}
+                                            disabled={!playerRef.current}
+                                            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white text-sm font-semibold transition"
+                                        >
+                                            Report
                                         </button>
                                     </div>
                                 </div>
@@ -543,6 +576,13 @@ const QuizRoundScreen = () => {
                                 className="px-4 py-2 bg-gray-700 dark:bg-gray-600 hover:bg-gray-800 dark:hover:bg-gray-500 rounded-lg text-white text-sm font-semibold transition"
                             >
                                 Skip broken song
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleReportAndSkip}
+                                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-600 rounded-lg text-white text-sm font-semibold transition"
+                            >
+                                Report &amp; skip
                             </button>
                         </div>
                     </div>
