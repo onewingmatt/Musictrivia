@@ -5,7 +5,7 @@ const authenticateToken = require('../middleware/auth');
 const levenshtein = require('fast-levenshtein');
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
+const { Readable } = require('stream');
 const { execSync, execFile } = require('child_process');
 
 const DEFAULT_SOURCES = [
@@ -446,30 +446,26 @@ function resolveAudioStreamUrl(youtubeId) {
     });
 }
 
-router.get('/audio-stream/:youtubeId', (req, res) => {
+router.get('/audio-stream/:youtubeId', async (req, res) => {
     const { youtubeId } = req.params;
     if (!/^[A-Za-z0-9_-]{11}$/.test(youtubeId)) return res.status(400).json({ error: 'Invalid video id' });
 
-    resolveAudioStreamUrl(youtubeId)
-        .then(url => {
-            const upstream = https.get(url, ures => {
-                if (ures.statusCode !== 200) {
-                    upstream.destroy();
-                    return res.status(502).json({ error: 'Upstream error' });
-                }
-                res.setHeader('Content-Type', ures.headers['content-type'] || 'audio/mpeg');
-                res.setHeader('Cache-Control', 'no-store');
-                if (ures.headers['content-length']) res.setHeader('Content-Length', ures.headers['content-length']);
-                ures.pipe(res);
-            });
-            upstream.on('error', () => {
-                if (!res.headersSent) res.status(502).json({ error: 'Stream failed' });
-            });
-        })
-        .catch(err => {
-            console.error('Audio stream resolve failed:', youtubeId, err.message);
-            res.status(502).json({ error: 'Could not resolve audio stream' });
-        });
+    try {
+        const url = await resolveAudioStreamUrl(youtubeId);
+        // fetch() follows the googlevideo 302 redirect to the CDN (https.get does not)
+        const upstream = await fetch(url, { redirect: 'follow' });
+        if (!upstream.ok || !upstream.body) {
+            return res.status(502).json({ error: 'Upstream error' });
+        }
+        res.setHeader('Content-Type', upstream.headers.get('content-type') || 'audio/mpeg');
+        res.setHeader('Cache-Control', 'no-store');
+        const contentLength = upstream.headers.get('content-length');
+        if (contentLength) res.setHeader('Content-Length', contentLength);
+        Readable.fromWeb(upstream.body).pipe(res);
+    } catch (err) {
+        console.error('Audio stream failed:', youtubeId, err.message);
+        if (!res.headersSent) res.status(502).json({ error: 'Could not resolve audio stream' });
+    }
 });
 
 module.exports = router;
