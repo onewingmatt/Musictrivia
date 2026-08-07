@@ -34,6 +34,17 @@ app.get('/health', (req, res) => {
     res.json({ ok: true });
 });
 
+// Serve the generated song list (regenerated into the DB dir by scripts/gen_list.js)
+app.get('/songs-list.txt', (req, res) => {
+    const listPath = process.env.DB_PATH ? path.join(path.dirname(process.env.DB_PATH), 'musictrivia-songs.txt') : '';
+    if (listPath && fs.existsSync(listPath)) {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        return res.sendFile(listPath);
+    }
+    res.status(404).send('Song list not generated yet. Run scripts/gen_list.js in the backend.');
+});
+
 if (fs.existsSync(frontendDist)) {
     app.use(express.static(frontendDist));
     app.use((req, res, next) => {
