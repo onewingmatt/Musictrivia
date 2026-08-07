@@ -4,3 +4,4 @@ database.sqlite
 *.bak
 *.log
 .env
+__pycache__/
