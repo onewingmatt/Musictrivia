@@ -33,6 +33,7 @@ const QuizSetupScreen = () => {
         return initial;
     });
     const [popularityRange, setPopularityRange] = useState([50, 100]);
+    const [market, setMarket] = useState('us');
     const [skipMastered, setSkipMastered] = useState(false);
     const [randomStart, setRandomStart] = useState(false);
     const [questionCount, setQuestionCount] = useState(5);
@@ -79,6 +80,7 @@ const QuizSetupScreen = () => {
                 decadeWeights,
                 sourceWeights,
                 popularityRange,
+                market,
                 skipMastered,
                 randomStart,
                 questionCount,
@@ -105,6 +107,7 @@ const QuizSetupScreen = () => {
         if (config.decadeWeights) setDecadeWeights(config.decadeWeights);
         if (config.sourceWeights) setSourceWeights(config.sourceWeights);
         if (config.popularityRange) setPopularityRange(config.popularityRange);
+        if (config.market) setMarket(config.market);
         if (config.skipMastered !== undefined) setSkipMastered(config.skipMastered);
         if (config.randomStart !== undefined) setRandomStart(config.randomStart);
         if (config.questionCount) setQuestionCount(config.questionCount);
@@ -159,6 +162,7 @@ const QuizSetupScreen = () => {
                 skip_mastered: skipMastered,
                 min_popularity: popularityRange[0],
                 max_popularity: popularityRange[1],
+                market,
                 limit: questionCount
             });
 
@@ -407,7 +411,7 @@ const QuizSetupScreen = () => {
             <div className="mb-6">
                 <h3 className="text-lg font-semibold mb-1">Popularity ({popularityRange[0]} – {popularityRange[1]})</h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-                    Based on chart performance: peak position + weeks on chart. Blended across active sources.
+                    Based on chart performance: peak position + weeks on chart + weeks at #1.
                 </p>
                 <div className="flex gap-4 items-center">
                     <div className="flex-1">
@@ -434,6 +438,33 @@ const QuizSetupScreen = () => {
                 <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400 mt-1">
                     <span>Obscure (0)</span>
                     <span>Hits Only (100)</span>
+                </div>
+            </div>
+
+            {/* Chart Market toggle */}
+            <div className="mb-6">
+                <h3 className="text-lg font-semibold mb-1">Chart Market</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                    Which country's charts drive the popularity filter above.
+                </p>
+                <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-700 rounded-lg max-w-sm">
+                    {[
+                        { label: 'US', value: 'us', desc: 'Billboard Hot 100' },
+                        { label: 'Canada', value: 'ca', desc: 'Canadian charts' }
+                    ].map((opt) => (
+                        <button
+                            key={opt.value}
+                            onClick={() => setMarket(opt.value)}
+                            className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition ${
+                                market === opt.value
+                                    ? 'bg-white dark:bg-gray-600 text-indigo-600 dark:text-indigo-300 shadow-sm'
+                                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                            }`}
+                        >
+                            <div className="font-bold">{opt.label}</div>
+                            <div className="text-[10px] opacity-75">{opt.desc}</div>
+                        </button>
+                    ))}
                 </div>
             </div>
 

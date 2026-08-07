@@ -111,23 +111,27 @@ def parse_songs(data, min_popularity=0, decades=None, limit=None):
                     'artist': entry['artist'],
                     'peak_position': entry['peak_position'],
                     'weeks_on_chart': entry['weeks_on_chart'],
+                    'weeks_at_1': 1 if entry.get('this_week') == 1 else 0,
                     'first_date': week['date'],
                 }
             else:
                 songs[key]['peak_position'] = min(songs[key]['peak_position'], entry['peak_position'])
                 songs[key]['weeks_on_chart'] = max(songs[key]['weeks_on_chart'], entry['weeks_on_chart'])
+                if entry.get('this_week') == 1:
+                    songs[key]['weeks_at_1'] += 1
 
     # Compute popularity and decade
     for s in songs.values():
-        # Peak component (0-55): exponential reward at the very top
-        # #1 = 55, #2 = 42, #5 = 30, #10 = 22, #20 = 14, #50 = 4, #100 = 0
-        peak_comp = 55 * ((100 - s['peak_position']) / 100) ** 1.5
-        # #1 bonus: extra 15 points for reaching #1
-        number_one_bonus = 15 if s['peak_position'] == 1 else 0
-        # Weeks component (0-30): exponential so long runners separate
-        # 1 week = 2, 10 weeks = 10, 30 weeks = 18, 60 weeks = 25, 90+ weeks = 30
-        weeks_comp = 30 * (1 - math.exp(-s['weeks_on_chart'] / 25))
-        s['popularity'] = min(100, max(0, int(peak_comp + number_one_bonus + weeks_comp)))
+        # Peak component (0-45): exponential reward at the very top
+        # #1 = 44, #2 = 34, #5 = 25, #10 = 19, #20 = 14, #50 = 3, #100 = 0
+        peak_comp = 45 * ((100 - s['peak_position']) / 100) ** 1.5
+        # Weeks component (0-35): exponential so long runners separate
+        # 1 week = 1, 10 weeks = 10, 30 weeks = 21, 60 weeks = 29, 90+ weeks = 35
+        weeks_comp = 35 * (1 - math.exp(-s['weeks_on_chart'] / 25))
+        # Weeks-at-#1 component (0-20): rewards #1 longevity, saturates ~30 weeks
+        w1_comp = 20 * (1 - math.exp(-s['weeks_at_1'] / 10))
+        s['popularity'] = min(100, max(0, int(peak_comp + weeks_comp + w1_comp)))
+        s['us_popularity'] = s['popularity']
         year = int(s['first_date'][:4])
         s['decade'] = (year // 10) * 10
 
@@ -202,6 +206,12 @@ def import_to_db(songs, db_path, genre_cache=None):
         c.execute("ALTER TABLE songs ADD COLUMN peak_position INTEGER")
     if 'weeks_on_chart' not in columns:
         c.execute("ALTER TABLE songs ADD COLUMN weeks_on_chart INTEGER")
+    if 'weeks_at_1' not in columns:
+        c.execute("ALTER TABLE songs ADD COLUMN weeks_at_1 INTEGER DEFAULT 0")
+    if 'us_popularity' not in columns:
+        c.execute("ALTER TABLE songs ADD COLUMN us_popularity INTEGER DEFAULT 0")
+    if 'ca_popularity' not in columns:
+        c.execute("ALTER TABLE songs ADD COLUMN ca_popularity INTEGER DEFAULT 0")
 
     # Source table used by the quiz UI filters
     c.execute("""
@@ -227,10 +237,10 @@ def import_to_db(songs, db_path, genre_cache=None):
         try:
             c.execute(
                 """INSERT OR IGNORE INTO songs 
-                   (title, artist, genre, decade, popularity, audio_url, youtube_id, peak_position, weeks_on_chart)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                  (title, artist, genre, decade, popularity, audio_url, youtube_id, peak_position, weeks_on_chart, weeks_at_1, us_popularity)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 [s['song'], s['artist'], genre, s['decade'], s['popularity'],
-                 youtube_id or '', youtube_id, s['peak_position'], s['weeks_on_chart']]
+                 youtube_id or '', youtube_id, s['peak_position'], s['weeks_on_chart'], s['weeks_at_1'], s['us_popularity']]
             )
             if c.rowcount > 0:
                 inserted += 1
@@ -245,9 +255,9 @@ def import_to_db(songs, db_path, genre_cache=None):
                 song_id = row[0]
                 c.execute(
                     """INSERT OR IGNORE INTO song_sources
-                       (song_id, source, source_popularity, chart_entries)
-                       VALUES (?, ?, ?, ?)""",
-                    [song_id, source_name, s['popularity'], max(1, int(s['weeks_on_chart'] or 1))]
+                      (song_id, source, source_popularity, chart_entries)
+                      VALUES (?, ?, ?, ?)""",
+                    [song_id, source_name, s['popularity'], max(1, int(s['weeks_at_1'] or 1))]
                 )
                 if c.rowcount > 0:
                     source_rows += 1

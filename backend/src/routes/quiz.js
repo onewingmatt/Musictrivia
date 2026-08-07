@@ -116,8 +116,12 @@ router.post('/generate', authenticateToken, async (req, res) => {
             limit = 10,
             skip_mastered = false,
             min_popularity = 0,
-            max_popularity = 100
+            max_popularity = 100,
+            market = 'us'
         } = req.body;
+
+        // Popularity market: 'us' (full US Hot 100 history) or 'ca' (Canadian charts)
+        const popCol = market === 'ca' ? 'ca_popularity' : 'us_popularity';
 
         // If source weights specified, filter to songs that appear in active sources
         const activeSources = Object.entries(source_weights)
@@ -132,11 +136,11 @@ router.post('/generate', authenticateToken, async (req, res) => {
         if (activeSources.length > 0 && hasSongSourcesTable) {
             query = `SELECT DISTINCT s.* FROM songs s
                      INNER JOIN song_sources ss ON ss.song_id = s.id
-                     WHERE s.popularity >= ? AND s.popularity <= ?
+                     WHERE s.${popCol} >= ? AND s.${popCol} <= ?
                      AND ss.source IN (${activeSources.map(() => '?').join(',')})`;
             params = [min_popularity, max_popularity, ...activeSources];
         } else {
-            query = `SELECT * FROM songs s WHERE s.popularity >= ? AND s.popularity <= ?`;
+            query = `SELECT * FROM songs s WHERE s.${popCol} >= ? AND s.${popCol} <= ?`;
             params = [min_popularity, max_popularity];
         }
 

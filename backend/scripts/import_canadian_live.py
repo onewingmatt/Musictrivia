@@ -29,7 +29,7 @@ def parse_date(text: str) -> date:
     return datetime.strptime(text, "%Y-%m-%d").date()
 
 
-def calc_popularity(peak_position, weeks_on_chart):
+def calc_popularity(peak_position, weeks_on_chart, weeks_at_1=0):
     try:
         peak_position = int(peak_position)
     except Exception:
@@ -38,11 +38,15 @@ def calc_popularity(peak_position, weeks_on_chart):
         weeks_on_chart = int(weeks_on_chart)
     except Exception:
         weeks_on_chart = 1
+    try:
+        weeks_at_1 = int(weeks_at_1)
+    except Exception:
+        weeks_at_1 = 0
 
-    peak_comp = 55 * ((100 - peak_position) / 100) ** 1.5
-    number_one_bonus = 15 if peak_position == 1 else 0
-    weeks_comp = 30 * (1 - math.exp(-weeks_on_chart / 25))
-    return min(100, max(0, int(peak_comp + number_one_bonus + weeks_comp)))
+    peak_comp = 45 * ((100 - peak_position) / 100) ** 1.5
+    weeks_comp = 35 * (1 - math.exp(-weeks_on_chart / 25))
+    w1_comp = 20 * (1 - math.exp(-weeks_at_1 / 10))
+    return min(100, max(0, int(peak_comp + weeks_comp + w1_comp)))
 
 
 def ensure_schema(conn):

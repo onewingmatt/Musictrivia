@@ -31,7 +31,14 @@ const initDb = () => {
           genre TEXT NOT NULL,
           decade INTEGER NOT NULL,
           popularity INTEGER DEFAULT 50,
-          audio_url TEXT NOT NULL
+          audio_url TEXT NOT NULL,
+          youtube_id TEXT,
+          peak_position INTEGER,
+          weeks_on_chart INTEGER,
+          weeks_at_1 INTEGER DEFAULT 0,
+          us_popularity INTEGER DEFAULT 0,
+          ca_popularity INTEGER DEFAULT 0,
+          hidden INTEGER DEFAULT 0
         )
       `);
 
