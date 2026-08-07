@@ -22,21 +22,10 @@ const QuizRoundScreen = () => {
     const [audioLookupNonce, setAudioLookupNonce] = useState(0);
     const [playerPaused, setPlayerPaused] = useState(false);
     const [volume, setVolume] = useState(() => parseInt(localStorage.getItem('quizVolume') || '70'));
-    const playerRef = useRef(null);
-    const playerDivRef = useRef(null);
-    const stopTimerRef = useRef(null);
-    const progressIntervalRef = useRef(null);
+    const [buffering, setBuffering] = useState(false);
+    const audioRef = useRef(null);
     const resolvedYtIdsRef = useRef(new Set());
     const resolvingYtIdsRef = useRef(new Set());
-    const pendingPlayRef = useRef(false);
-
-    // Load YouTube IFrame API once
-    useEffect(() => {
-        if (window.YT) return;
-        const tag = document.createElement('script');
-        tag.src = 'https://www.youtube.com/iframe_api';
-        document.head.appendChild(tag);
-    }, []);
 
     useEffect(() => {
         const stored = sessionStorage.getItem('currentQuiz');
@@ -73,10 +62,17 @@ const QuizRoundScreen = () => {
         return offsets;
     }, [randomStart, questions.length]);
 
-    const isIOS = useMemo(() => {
-        if (typeof navigator === 'undefined') return false;
-        const ua = navigator.userAgent || '';
-        return /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    // Override the media session so Android Auto / lock screen shows "Music Quiz",
+    // not the real song metadata (the whole reason we proxy audio instead of iframe).
+    useEffect(() => {
+        if ('mediaSession' in navigator) {
+            try {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: 'Music Quiz',
+                    artist: 'Music Trivia',
+                });
+            } catch {}
+        }
     }, []);
 
     const handleSubmit = async (e) => {
@@ -179,21 +175,21 @@ const QuizRoundScreen = () => {
     const handleVolumeChange = (nextVolume) => {
         setVolume(nextVolume);
         localStorage.setItem('quizVolume', String(nextVolume));
-        if (playerRef.current?.setVolume) {
-            try { playerRef.current.setVolume(nextVolume); } catch {}
+        if (audioRef.current) {
+            try { audioRef.current.volume = nextVolume / 100; } catch {}
         }
     };
 
     const togglePausePlayback = () => {
-        const player = playerRef.current;
-        if (!player) return;
+        const audio = audioRef.current;
+        if (!audio) return;
 
         try {
             if (playerPaused) {
-                player.playVideo?.();
+                audio.play().catch(() => {});
                 setPlayerPaused(false);
             } else {
-                player.pauseVideo?.();
+                audio.pause();
                 setPlayerPaused(true);
             }
         } catch (err) {
@@ -207,106 +203,46 @@ const QuizRoundScreen = () => {
 
     const startAudioPlayback = () => {
         if (!hasYoutube || !currentQ) return;
-        if (pendingPlayRef.current) {
-            clearInterval(pendingPlayRef.current);
-            pendingPlayRef.current = null;
-        }
-        if (playerRef.current) {
-            try { playerRef.current.destroy(); } catch {}
-            playerRef.current = null;
-        }
-        if (stopTimerRef.current) {
-            clearInterval(stopTimerRef.current);
-            clearTimeout(stopTimerRef.current);
-            stopTimerRef.current = null;
-        }
-        if (progressIntervalRef.current) {
-            clearInterval(progressIntervalRef.current);
-            progressIntervalRef.current = null;
-        }
-        const vol = volume;
+        const audio = audioRef.current;
+        if (!audio) return;
+
+        audio.volume = volume / 100;
+        audio.play().catch(err => {
+            console.error('Failed to play audio', err);
+            setAudioResolveError('Playback failed. Tap to play audio again.');
+        });
+    };
+
+    // Seek to the random start offset once metadata is available
+    const handleLoadedMetadata = () => {
+        const audio = audioRef.current;
+        if (!audio) return;
         const startSec = randomStart && startOffsets[currentIndex] ? startOffsets[currentIndex] : 0;
-
-        const attachPlayer = () => {
-            playerRef.current = new window.YT.Player(playerDivRef.current, {
-                width: '640', height: '360',
-                videoId: youtubeId,
-                playerVars: {
-                    autoplay: 1, controls: 0, modestbranding: 1,
-                    rel: 0, fs: 0, iv_load_policy: 3, disablekb: 1,
-                    playsinline: 1,
-                    origin: window.location.origin,
-                    start: startSec
-                },
-                events: {
-                    onReady: (e) => {
-                        try { e.target.mute(); } catch {}
-                        try { e.target.setVolume(vol); } catch {}
-                        try { e.target.playVideo(); } catch {}
-                    },
-                    onStateChange: (ev) => {
-                        if (ev.data === window.YT.PlayerState.PLAYING) {
-                            setPlayerPaused(false);
-                            try { ev.target.unMute(); } catch {}
-                            try { ev.target.setVolume(vol); } catch {}
-
-                            const updateProgress = () => {
-                                const player = playerRef.current;
-                                if (!player || !player.getCurrentTime) return;
-                                const elapsed = player.getCurrentTime() - startSec;
-                                const p = Math.min(100, Math.max(0, (elapsed / clipDuration) * 100));
-                                setProgress(p);
-                            };
-                            progressIntervalRef.current = setInterval(updateProgress, 100);
-
-                            const checkClipEnd = () => {
-                                const player = playerRef.current;
-                                if (!player || !player.getCurrentTime) return;
-                                const elapsed = player.getCurrentTime() - startSec;
-                                if (elapsed >= clipDuration) {
-                                    if (loopClip) {
-                                        player.seekTo(startSec, true);
-                                        player.playVideo();
-                                        return;
-                                    }
-                                    player.pauseVideo();
-                                    clearInterval(progressIntervalRef.current);
-                                    setProgress(100);
-                                    setPlayerPaused(true);
-                                    if (stopTimerRef.current) {
-                                        clearInterval(stopTimerRef.current);
-                                    }
-                                    stopTimerRef.current = null;
-                                }
-                            };
-                            stopTimerRef.current = setInterval(checkClipEnd, 250);
-                        } else if (ev.data === window.YT.PlayerState.PAUSED) {
-                            setPlayerPaused(true);
-                        } else if (ev.data === window.YT.PlayerState.ENDED) {
-                            setPlayerPaused(false);
-                            setProgress(100);
-                        }
-                    },
-                    onError: () => {
-                        setAudioStarted(false);
-                        setResolvingAudio(false);
-                    }
-                }
-            });
-        };
-
-        if (window.YT && window.YT.Player) {
-            attachPlayer();
-            return;
+        if (startSec > 0 && startSec < audio.duration) {
+            try { audio.currentTime = startSec; } catch {}
         }
+    };
 
-        const check = setInterval(() => {
-            if (window.YT && window.YT.Player) {
-                clearInterval(check);
-                attachPlayer();
+    // Progress + clip-end enforcement via the native timeupdate event
+    const handleTimeUpdate = () => {
+        const audio = audioRef.current;
+        if (!audio) return;
+        const startSec = randomStart && startOffsets[currentIndex] ? startOffsets[currentIndex] : 0;
+        const elapsed = audio.currentTime - startSec;
+        const p = Math.min(100, Math.max(0, (elapsed / clipDuration) * 100));
+        setProgress(p);
+
+        if (elapsed >= clipDuration) {
+            if (loopClip) {
+                audio.currentTime = startSec;
+                audio.play().catch(() => {});
+            } else {
+                audio.pause();
+                setProgress(100);
+                setPlayerPaused(true);
+                setBuffering(false);
             }
-        }, 100);
-        pendingPlayRef.current = check;
+        }
     };
 
     // Lazy-resolve YouTube ID if not cached
@@ -364,26 +300,15 @@ const QuizRoundScreen = () => {
         setPlayerPaused(false);
     }, [currentIndex]);
 
-    // Cleanup old player/timers when the question changes.
+    // Cleanup old audio element when the question changes.
     useEffect(() => {
         setAudioStarted(false);
         setProgress(0);
-        if (stopTimerRef.current) {
-            clearInterval(stopTimerRef.current);
-            clearTimeout(stopTimerRef.current);
-            stopTimerRef.current = null;
-        }
-        if (progressIntervalRef.current) {
-            clearInterval(progressIntervalRef.current);
-            progressIntervalRef.current = null;
-        }
-        if (pendingPlayRef.current) {
-            clearInterval(pendingPlayRef.current);
-            pendingPlayRef.current = null;
-        }
-        if (playerRef.current) {
-            try { playerRef.current.destroy(); } catch {}
-            playerRef.current = null;
+        setBuffering(false);
+        const audio = audioRef.current;
+        if (audio) {
+            audio.pause();
+            try { audio.removeAttribute('src'); audio.load(); } catch {}
         }
     }, [currentIndex]);
 
@@ -402,156 +327,78 @@ const QuizRoundScreen = () => {
             <div className="mb-8 flex flex-col items-center gap-4">
                 {hasYoutube ? (
                     <>
-                        {!isIOS && <div ref={playerDivRef} className="fixed left-0 top-0 w-[640px] h-[360px] opacity-0 pointer-events-none" aria-hidden="true" />}
-                        {isIOS ? (
-                            <div className="w-full max-w-[400px] space-y-3">
-                                <div className="text-sm text-gray-600 dark:text-gray-300 text-center">
-                                    Use the YouTube play button below on iPhone.
+                        <audio
+                            ref={audioRef}
+                            src={`/api/quiz/audio-stream/${youtubeId}`}
+                            preload="auto"
+                            playsInline
+                            onLoadedMetadata={handleLoadedMetadata}
+                            onTimeUpdate={handleTimeUpdate}
+                            onWaiting={() => setBuffering(true)}
+                            onPlaying={() => setBuffering(false)}
+                            onEnded={() => { setProgress(100); setPlayerPaused(true); setBuffering(false); }}
+                            onError={() => { setAudioStarted(false); setResolvingAudio(false); }}
+                        />
+                        <div className="w-full max-w-[400px] space-y-3">
+                            <div className="flex flex-col gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 p-3">
+                                <div className="flex items-center gap-3">
+                                    <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Volume</label>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="100"
+                                        step="1"
+                                        value={volume}
+                                        onChange={(e) => handleVolumeChange(parseInt(e.target.value, 10))}
+                                        className="flex-1 accent-indigo-600 dark:accent-indigo-400"
+                                    />
+                                    <span className="w-10 text-right text-xs text-gray-500 dark:text-gray-400">{volume}</span>
                                 </div>
-                                <div className="relative w-full overflow-hidden rounded-lg bg-black">
-                                    <iframe
-                                        key={`${currentQ.id}-${startOffsets[currentIndex] || 0}`}
-                                        width="400"
-                                        height="230"
-                                        src={`https://www.youtube.com/embed/${youtubeId}?playsinline=1&controls=1&rel=0${randomStart && startOffsets[currentIndex] ? `&start=${startOffsets[currentIndex]}` : ''}`}
-                                        title="YouTube audio player"
-                                        frameBorder="0"
-                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                        allowFullScreen
-                                        className="block w-full rounded-lg bg-black"
-                                    />
-                                    <div
-                                        className="pointer-events-none absolute inset-x-0 top-0 h-24 rounded-t-lg bg-black"
-                                        aria-hidden="true"
-                                    />
-                                    <div
-                                        className="pointer-events-none absolute inset-x-0 top-24 h-16 bg-gradient-to-b from-black to-transparent"
-                                        aria-hidden="true"
-                                    />
-                                    <div
-                                        className="pointer-events-none absolute inset-x-0 bottom-0 h-20 rounded-b-lg bg-black"
-                                        aria-hidden="true"
-                                    />
-                                    <div
-                                        className="pointer-events-none absolute inset-x-0 bottom-20 h-12 bg-gradient-to-t from-black to-transparent"
-                                        aria-hidden="true"
-                                    />
-                                    <div
-                                        className="pointer-events-none absolute inset-y-0 left-0 w-14 rounded-l-lg bg-black"
-                                        aria-hidden="true"
-                                    />
-                                    <div
-                                        className="pointer-events-none absolute inset-y-0 left-14 w-10 bg-gradient-to-r from-black to-transparent"
-                                        aria-hidden="true"
-                                    />
-                                    <div
-                                        className="pointer-events-none absolute inset-y-0 right-0 w-14 rounded-r-lg bg-black"
-                                        aria-hidden="true"
-                                    />
-                                    <div
-                                        className="pointer-events-none absolute inset-y-0 right-14 w-10 bg-gradient-to-l from-black to-transparent"
-                                        aria-hidden="true"
-                                    />
-                                </div>
-                                <div className="flex flex-col gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 p-3">
-                                    <div className="flex items-center gap-3">
-                                        <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Volume</label>
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="100"
-                                            step="1"
-                                            value={volume}
-                                            onChange={(e) => handleVolumeChange(parseInt(e.target.value, 10))}
-                                            className="flex-1 accent-indigo-600 dark:accent-indigo-400"
-                                        />
-                                        <span className="w-10 text-right text-xs text-gray-500 dark:text-gray-400">{volume}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 justify-center">
-                                        <button
-                                            type="button"
-                                            onClick={togglePausePlayback}
-                                            disabled={!playerRef.current}
-                                            className="px-4 py-2 bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white text-sm font-semibold transition"
-                                        >
-                                            {playerPaused ? 'Resume' : 'Pause'}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={handleReportAndSkip}
-                                            disabled={!playerRef.current}
-                                            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white text-sm font-semibold transition"
-                                        >
-                                            Report
-                                        </button>
-                                    </div>
-                                </div>
-                                <div className="text-xs text-center text-gray-500 dark:text-gray-400">
-                                    Back to masking: this leaves a smaller center window tappable while covering much more of the YouTube frame.
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="w-full max-w-[400px] space-y-3">
-                                <div className="flex flex-col gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 p-3">
-                                    <div className="flex items-center gap-3">
-                                        <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Volume</label>
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="100"
-                                            step="1"
-                                            value={volume}
-                                            onChange={(e) => handleVolumeChange(parseInt(e.target.value, 10))}
-                                            className="flex-1 accent-indigo-600 dark:accent-indigo-400"
-                                        />
-                                        <span className="w-10 text-right text-xs text-gray-500 dark:text-gray-400">{volume}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 justify-center">
-                                        <button
-                                            type="button"
-                                            onClick={togglePausePlayback}
-                                            disabled={!playerRef.current}
-                                            className="px-4 py-2 bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white text-sm font-semibold transition"
-                                        >
-                                            {playerPaused ? 'Resume' : 'Pause'}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={handleReportAndSkip}
-                                            disabled={!playerRef.current}
-                                            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white text-sm font-semibold transition"
-                                        >
-                                            Report
-                                        </button>
-                                    </div>
-                                </div>
-                                {audioStarted ? (
-                                    <div className="w-full">
-                                        <div className="w-full h-[46px] bg-gray-900 dark:bg-gray-800 rounded-t-lg flex items-center justify-center gap-2">
-                                            <span className="text-white text-sm">
-                                                {progress >= 100 && !loopClip ? '\u23F8 Audio Finished' : '\u25B6 Playing clip...'}
-                                            </span>
-                                        </div>
-                                        <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-b-lg overflow-hidden">
-                                            <div
-                                                className="h-full bg-indigo-500 dark:bg-indigo-400 transition-all duration-100 ease-linear"
-                                                style={{ width: `${progress}%` }}
-                                            ></div>
-                                        </div>
-                                    </div>
-                                ) : (
+                                <div className="flex items-center gap-2 justify-center">
                                     <button
-                                        onClick={() => {
-                                            setAudioStarted(true);
-                                            startAudioPlayback();
-                                        }}
-                                        className="w-[400px] h-[46px] bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 rounded-lg flex items-center justify-center gap-2 text-white text-sm font-semibold transition"
+                                        type="button"
+                                        onClick={togglePausePlayback}
+                                        disabled={!audioStarted}
+                                        className="px-4 py-2 bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white text-sm font-semibold transition"
                                     >
-                                        &#9654; Tap to play audio
+                                        {playerPaused ? 'Resume' : 'Pause'}
                                     </button>
-                                )}
+                                    <button
+                                        type="button"
+                                        onClick={handleReportAndSkip}
+                                        disabled={!audioStarted}
+                                        className="px-4 py-2 bg-rose-600 hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white text-sm font-semibold transition"
+                                    >
+                                        Report
+                                    </button>
+                                </div>
                             </div>
-                        )}
+                            {audioStarted ? (
+                                <div className="w-full">
+                                    <div className="w-full h-[46px] bg-gray-900 dark:bg-gray-800 rounded-t-lg flex items-center justify-center gap-2">
+                                        <span className="text-white text-sm">
+                                            {buffering ? 'Buffering...' : progress >= 100 && !loopClip ? '\u23F8 Audio Finished' : '\u25B6 Playing clip...'}
+                                        </span>
+                                    </div>
+                                    <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-b-lg overflow-hidden">
+                                        <div
+                                            className="h-full bg-indigo-500 dark:bg-indigo-400 transition-all duration-100 ease-linear"
+                                            style={{ width: `${progress}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => {
+                                        setAudioStarted(true);
+                                        startAudioPlayback();
+                                    }}
+                                    className="w-[400px] h-[46px] bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 rounded-lg flex items-center justify-center gap-2 text-white text-sm font-semibold transition"
+                                >
+                                    &#9654; Tap to play audio
+                                </button>
+                            )}
+                        </div>
                     </>
                 ) : resolvingAudio ? (
                     <div className="w-[400px] h-[46px] bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm">

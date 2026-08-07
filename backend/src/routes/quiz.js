@@ -3,7 +3,10 @@ const router = express.Router();
 const { db } = require('../db/setup');
 const authenticateToken = require('../middleware/auth');
 const levenshtein = require('fast-levenshtein');
-const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const https = require('https');
+const { execSync, execFile } = require('child_process');
 
 const DEFAULT_SOURCES = [
     { source: 'billboard-us', label: 'Billboard Hot 100 (US)' },
@@ -406,6 +409,67 @@ router.post('/report', authenticateToken, (req, res) => {
             }
         );
     });
+});
+
+// Audio stream proxy — resolves a direct YouTube audio URL via yt-dlp and pipes it through
+// the backend so the browser never touches the YouTube iframe (fixes hidden-iframe stutter
+// and the media-session metadata leak).
+const audioStreamCache = new Map(); // youtubeId -> { url, expires }
+const AUDIO_STREAM_TTL = 60 * 60 * 1000; // 1 hour
+
+function resolveAudioStreamUrl(youtubeId) {
+    const cached = audioStreamCache.get(youtubeId);
+    if (cached && cached.expires > Date.now()) return Promise.resolve(cached.url);
+
+    return new Promise((resolve, reject) => {
+        const YT_PROXY = process.env.YT_PROXY || '';
+        const proxyArg = YT_PROXY ? ['--proxy', YT_PROXY] : [];
+        const cookiePath = process.env.DB_PATH ? path.join(path.dirname(process.env.DB_PATH), 'cookies.txt') : '';
+        const cookieArg = cookiePath && fs.existsSync(cookiePath) ? ['--cookies', cookiePath] : [];
+        const args = [
+            '--js-runtime', 'node',
+            '--remote-components', 'ejs:github',
+            ...proxyArg,
+            ...cookieArg,
+            '-f', 'bestaudio[ext=m4a]/bestaudio/best',
+            '--get-url',
+            `https://www.youtube.com/watch?v=${youtubeId}`,
+        ];
+
+        execFile('yt-dlp', args, { timeout: 20000 }, (err, stdout) => {
+            if (err) return reject(err);
+            const url = stdout.trim();
+            if (!url) return reject(new Error('Empty stream URL'));
+            audioStreamCache.set(youtubeId, { url, expires: Date.now() + AUDIO_STREAM_TTL });
+            resolve(url);
+        });
+    });
+}
+
+router.get('/audio-stream/:youtubeId', (req, res) => {
+    const { youtubeId } = req.params;
+    if (!/^[A-Za-z0-9_-]{11}$/.test(youtubeId)) return res.status(400).json({ error: 'Invalid video id' });
+
+    resolveAudioStreamUrl(youtubeId)
+        .then(url => {
+            const upstream = https.get(url, ures => {
+                if (ures.statusCode !== 200) {
+                    upstream.destroy();
+                    return res.status(502).json({ error: 'Upstream error' });
+                }
+                res.setHeader('Content-Type', ures.headers['content-type'] || 'audio/mpeg');
+                res.setHeader('Cache-Control', 'no-store');
+                if (ures.headers['content-length']) res.setHeader('Content-Length', ures.headers['content-length']);
+                ures.pipe(res);
+            });
+            upstream.on('error', () => {
+                if (!res.headersSent) res.status(502).json({ error: 'Stream failed' });
+            });
+        })
+        .catch(err => {
+            console.error('Audio stream resolve failed:', youtubeId, err.message);
+            res.status(502).json({ error: 'Could not resolve audio stream' });
+        });
 });
 
 module.exports = router;
