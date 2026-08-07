@@ -23,6 +23,7 @@ const QuizRoundScreen = () => {
     const [playerPaused, setPlayerPaused] = useState(false);
     const [volume, setVolume] = useState(() => parseInt(localStorage.getItem('quizVolume') || '70'));
     const [buffering, setBuffering] = useState(false);
+    const [audioNonce, setAudioNonce] = useState(0);
     const audioRef = useRef(null);
     const resolvedYtIdsRef = useRef(new Set());
     const resolvingYtIdsRef = useRef(new Set());
@@ -122,6 +123,13 @@ const QuizRoundScreen = () => {
 
     const retryAudioLookup = () => {
         if (!currentQ) return;
+        if (currentQ.audio_url) {
+            // Stream load failed — force the audio element to re-request
+            setAudioNonce(prev => prev + 1);
+            setAudioResolveError('');
+            setAudioStarted(false);
+            return;
+        }
         resolvingYtIdsRef.current.delete(currentQ.id);
         resolvedYtIdsRef.current.delete(currentQ.id);
         setAudioResolveError('');
@@ -200,6 +208,8 @@ const QuizRoundScreen = () => {
     const currentQ = questions.length > 0 ? questions[currentIndex] : null;
     const youtubeId = currentQ?.audio_url;
     const hasYoutube = youtubeId && youtubeId.length === 11;
+    const streamStart = randomStart && startOffsets[currentIndex] ? startOffsets[currentIndex] : 0;
+    const streamSrc = `/api/quiz/audio-stream/${youtubeId || ''}${streamStart ? `?start=${streamStart}` : ''}${audioNonce ? `${streamStart ? '&' : '?'}n=${audioNonce}` : ''}`;
 
     const startAudioPlayback = () => {
         if (!hasYoutube || !currentQ) return;
@@ -329,7 +339,7 @@ const QuizRoundScreen = () => {
                     <>
                         <audio
                             ref={audioRef}
-                            src={`/api/quiz/audio-stream/${youtubeId}`}
+                            src={streamSrc}
                             preload="auto"
                             playsInline
                             onLoadedMetadata={handleLoadedMetadata}
@@ -337,7 +347,7 @@ const QuizRoundScreen = () => {
                             onWaiting={() => setBuffering(true)}
                             onPlaying={() => setBuffering(false)}
                             onEnded={() => { setProgress(100); setPlayerPaused(true); setBuffering(false); }}
-                            onError={() => { setAudioStarted(false); setResolvingAudio(false); }}
+                            onError={() => { setAudioStarted(false); setAudioResolveError('Could not load audio for this song. Retry or report it.'); }}
                         />
                         <div className="w-full max-w-[400px] space-y-3">
                             <div className="flex flex-col gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 p-3">

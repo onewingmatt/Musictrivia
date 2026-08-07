@@ -6,7 +6,7 @@ const levenshtein = require('fast-levenshtein');
 const fs = require('fs');
 const path = require('path');
 const { Readable } = require('stream');
-const { execSync, execFile } = require('child_process');
+const { execSync, execFile, spawn } = require('child_process');
 
 const DEFAULT_SOURCES = [
     { source: 'billboard-us', label: 'Billboard Hot 100 (US)' },
@@ -446,26 +446,83 @@ function resolveAudioStreamUrl(youtubeId) {
     });
 }
 
+// Fallback streaming path: pipe yt-dlp stdout straight to the client (same pipeline the
+// Discord bot uses). Handles videos whose direct googlevideo URL is IP-locked to the
+// residential proxy and 403s on a plain fetch. With ?start=N, runs through ffmpeg so
+// random-start offsets are applied server-side.
+function streamViaYtDlp(youtubeId, startSec, res) {
+    const YT_PROXY = process.env.YT_PROXY || '';
+    const proxyArg = YT_PROXY ? ['--proxy', YT_PROXY] : [];
+    const cookiePath = process.env.DB_PATH ? path.join(path.dirname(process.env.DB_PATH), 'cookies.txt') : '';
+    const cookieArg = cookiePath && fs.existsSync(cookiePath) ? ['--cookies', cookiePath] : [];
+    const baseArgs = ['--js-runtime', 'node', '--remote-components', 'ejs:github', ...proxyArg, ...cookieArg];
+
+    const ytdlp = spawn('yt-dlp', [...baseArgs, '-f', '140', '-o', '-', `https://www.youtube.com/watch?v=${youtubeId}`]);
+    let source = ytdlp.stdout;
+    let contentType = 'audio/mp4';
+    let ffmpeg = null;
+
+    if (startSec > 0) {
+        ffmpeg = spawn('ffmpeg', ['-i', 'pipe:0', '-ss', String(startSec), '-c:a', 'libmp3lame', '-b:a', '128k', '-f', 'mp3', 'pipe:1']);
+        ytdlp.stdout.pipe(ffmpeg.stdin);
+        source = ffmpeg.stdout;
+        contentType = 'audio/mpeg';
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'no-store');
+
+    let gotData = false;
+    source.on('data', () => { gotData = true; });
+    source.pipe(res);
+
+    const noDataTimer = setTimeout(() => {
+        if (!gotData && !res.headersSent) {
+            res.status(502).json({ error: 'No audio data' });
+            ytdlp.kill();
+            if (ffmpeg) ffmpeg.kill();
+        }
+    }, 15000);
+    source.on('end', () => clearTimeout(noDataTimer));
+    res.on('close', () => {
+        clearTimeout(noDataTimer);
+        ytdlp.kill();
+        if (ffmpeg) ffmpeg.kill();
+    });
+}
+
 router.get('/audio-stream/:youtubeId', async (req, res) => {
     const { youtubeId } = req.params;
     if (!/^[A-Za-z0-9_-]{11}$/.test(youtubeId)) return res.status(400).json({ error: 'Invalid video id' });
+    const startSec = Math.max(0, parseFloat(req.query.start) || 0);
 
+    // Random start: apply the offset server-side via ffmpeg (always works)
+    if (startSec > 0) {
+        return streamViaYtDlp(youtubeId, startSec, res);
+    }
+
+    // Fast path: cached direct URL piped through (seekable, cached 1h).
     try {
         const url = await resolveAudioStreamUrl(youtubeId);
-        // fetch() follows the googlevideo 302 redirect to the CDN (https.get does not)
-        const upstream = await fetch(url, { redirect: 'follow' });
-        if (!upstream.ok || !upstream.body) {
-            return res.status(502).json({ error: 'Upstream error' });
+        const upstream = await fetch(url, {
+            redirect: 'follow',
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36' },
+        });
+        if (upstream.ok && upstream.body) {
+            res.setHeader('Content-Type', upstream.headers.get('content-type') || 'audio/mpeg');
+            res.setHeader('Cache-Control', 'no-store');
+            const contentLength = upstream.headers.get('content-length');
+            if (contentLength) res.setHeader('Content-Length', contentLength);
+            Readable.fromWeb(upstream.body).pipe(res);
+            return;
         }
-        res.setHeader('Content-Type', upstream.headers.get('content-type') || 'audio/mpeg');
-        res.setHeader('Cache-Control', 'no-store');
-        const contentLength = upstream.headers.get('content-length');
-        if (contentLength) res.setHeader('Content-Length', contentLength);
-        Readable.fromWeb(upstream.body).pipe(res);
+        console.error('Audio stream upstream rejected:', youtubeId, upstream.status);
     } catch (err) {
-        console.error('Audio stream failed:', youtubeId, err.message);
-        if (!res.headersSent) res.status(502).json({ error: 'Could not resolve audio stream' });
+        console.error('Audio stream resolve failed:', youtubeId, err.message);
     }
+
+    // Fallback: stream via the yt-dlp pipe (handles IP-locked / 403 URLs)
+    streamViaYtDlp(youtubeId, 0, res);
 });
 
 module.exports = router;
