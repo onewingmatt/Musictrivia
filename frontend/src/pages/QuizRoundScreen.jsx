@@ -229,7 +229,7 @@ const QuizRoundScreen = () => {
 
         const attachPlayer = () => {
             playerRef.current = new window.YT.Player(playerDivRef.current, {
-                width: '1', height: '1',
+                width: '640', height: '360',
                 videoId: youtubeId,
                 playerVars: {
                     autoplay: 1, controls: 0, modestbranding: 1,
@@ -402,7 +402,7 @@ const QuizRoundScreen = () => {
             <div className="mb-8 flex flex-col items-center gap-4">
                 {hasYoutube ? (
                     <>
-                        {!isIOS && <div ref={playerDivRef} className="absolute left-0 top-0 w-px h-px opacity-0 pointer-events-none" aria-hidden="true" />}
+                        {!isIOS && <div ref={playerDivRef} className="fixed left-0 top-0 w-[640px] h-[360px] opacity-0 pointer-events-none" aria-hidden="true" />}
                         {isIOS ? (
                             <div className="w-full max-w-[400px] space-y-3">
                                 <div className="text-sm text-gray-600 dark:text-gray-300 text-center">
