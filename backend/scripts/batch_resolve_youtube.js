@@ -10,14 +10,23 @@
  */
 const { spawnSync } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'src', 'db', 'database.sqlite');
 const sqlite3 = require('sqlite3').verbose();
 
 const limit = parseInt(process.argv[2]) || 100;
 const delay = parseInt(process.argv[3]) || 1500;
+const minPopularity = parseInt(process.argv[4]) || 0;
 
 const db = new sqlite3.Database(DB_PATH);
+
+// Same YouTube mitigation stack the audio pipeline uses (proxy + cookies)
+const YT_PROXY = process.env.YT_PROXY || '';
+const proxyArg = YT_PROXY ? ['--proxy', YT_PROXY] : [];
+const cookiePath = DB_PATH ? path.join(path.dirname(DB_PATH), 'cookies.txt') : '';
+const cookieArg = cookiePath && fs.existsSync(cookiePath) ? ['--cookies', cookiePath] : [];
+const baseArgs = ['--js-runtime', 'node', '--remote-components', 'ejs:github', ...proxyArg, ...cookieArg];
 
 function escapeShell(str) {
     return str.replace(/"/g, '\\"').replace(/'/g, "\\'");
@@ -33,6 +42,7 @@ function searchYoutube(title, artist) {
     for (const query of queries) {
         try {
             const result = spawnSync('yt-dlp', [
+                ...baseArgs,
                 '--flat-playlist',
                 '--print', 'id',
                 '--match-filter', 'duration<600',
@@ -58,8 +68,15 @@ db.all(
     `SELECT id, title, artist FROM songs
      WHERE (audio_url IS NULL OR audio_url = '')
        AND (youtube_id IS NULL OR youtube_id = '')
+       AND popularity >= ?
+       AND NOT EXISTS (
+           SELECT 1 FROM songs s2
+           WHERE s2.title = songs.title AND s2.artist = songs.artist
+             AND s2.youtube_id IS NOT NULL AND s2.youtube_id != ''
+       )
+     ORDER BY popularity DESC, peak_position ASC
      LIMIT ?`,
-    [limit],
+    [minPopularity, limit],
     (err, rows) => {
         if (err) {
             console.error('Query error:', err);
