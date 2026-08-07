@@ -34,11 +34,6 @@ app.get('/health', (req, res) => {
     res.json({ ok: true });
 });
 
-// Root
-app.get('/', (req, res) => {
-    res.send('Music Trivia API');
-});
-
 if (fs.existsSync(frontendDist)) {
     app.use(express.static(frontendDist));
     app.use((req, res, next) => {
