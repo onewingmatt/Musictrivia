@@ -160,6 +160,7 @@ const QuizSetupScreen = () => {
                 source_weights: sourceWeights,
                 decades: activeDecades,
                 skip_mastered: skipMastered,
+                exclude_song_ids: JSON.parse(localStorage.getItem('excludeSongIds') || '[]'),
                 min_popularity: popularityRange[0],
                 max_popularity: popularityRange[1],
                 market,
@@ -590,6 +591,22 @@ const QuizSetupScreen = () => {
                     <span className="text-lg font-medium text-gray-700 dark:text-gray-300">Loop clip</span>
                     <span className="text-sm text-gray-500 dark:text-gray-400">(repeat until you submit your answer)</span>
                 </label>
+            </div>
+
+            {/* Excluded songs tracker */}
+            <div className="mb-4 flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
+                <span>
+                    Excluded recent songs: {JSON.parse(localStorage.getItem('excludeSongIds') || '[]').length}
+                </span>
+                <button
+                    onClick={() => {
+                        localStorage.removeItem('excludeSongIds');
+                        window.location.reload();
+                    }}
+                    className="text-red-500 hover:text-red-700 underline text-xs"
+                >
+                    Clear history
+                </button>
             </div>
 
             <button

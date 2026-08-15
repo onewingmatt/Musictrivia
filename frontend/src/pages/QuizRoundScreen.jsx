@@ -2,6 +2,12 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 
+// If playback hasn't started this long after tapping play, or the playhead
+// freezes this long mid-clip while supposedly playing, treat the song's audio
+// as broken and auto-skip to the next question.
+const INITIAL_BUFFER_MS = 10000;
+const MID_PLAY_STALL_MS = 5000;
+
 const QuizRoundScreen = () => {
     const navigate = useNavigate();
     const [questions, setQuestions] = useState([]);
@@ -27,6 +33,13 @@ const QuizRoundScreen = () => {
     const audioRef = useRef(null);
     const resolvedYtIdsRef = useRef(new Set());
     const resolvingYtIdsRef = useRef(new Set());
+    const stallMonitorRef = useRef(null);
+    const lastPlayheadRef = useRef(0);
+    const lastPlayheadAtRef = useRef(0);
+    const playbackStartedAtRef = useRef(0);
+    const failedSongRef = useRef(null);
+    const feedbackRef = useRef(null);
+    const activeSrcRef = useRef(null);
 
     useEffect(() => {
         const stored = sessionStorage.getItem('currentQuiz');
@@ -102,6 +115,7 @@ const QuizRoundScreen = () => {
             setFeedback(null);
             setHintVisible(false);
         } else {
+            rememberPlayedSongs();
             sessionStorage.setItem('quizResults', JSON.stringify(results));
             navigate('/results');
         }
@@ -117,6 +131,7 @@ const QuizRoundScreen = () => {
             return;
         }
 
+        rememberPlayedSongs();
         sessionStorage.setItem('quizResults', JSON.stringify(nextResults));
         navigate('/results');
     };
@@ -137,8 +152,24 @@ const QuizRoundScreen = () => {
         setAudioLookupNonce(prev => prev + 1);
     };
 
-    const handleSkipBrokenSong = async () => {
-        if (!currentQ) return;
+    const clearStallMonitor = () => {
+        if (stallMonitorRef.current) {
+            clearInterval(stallMonitorRef.current);
+            stallMonitorRef.current = null;
+        }
+    };
+
+    // Flag the current song as broken (best effort), record it as skipped, and
+    // move to the next question. Idempotent per question.
+    const failCurrentSong = async (reason) => {
+        if (!currentQ || feedbackRef.current) return;
+        if (failedSongRef.current === currentQ.id) return;
+        failedSongRef.current = currentQ.id;
+
+        clearStallMonitor();
+
+        // Best-effort server-side flag; never block advancing on it.
+        api.post('/quiz/flag-song', { song_id: currentQ.id, reason }).catch(() => { /* best effort */ });
 
         try {
             const res = await api.post('/quiz/answer', {
@@ -150,17 +181,62 @@ const QuizRoundScreen = () => {
 
             const nextResults = [...results, {
                 question: currentQ,
-                result: {
-                    ...res.data,
-                    skipped_audio: true,
-                },
+                result: { ...res.data, skipped_audio: true },
             }];
 
             setResults(nextResults);
             advanceToNextQuestion(nextResults);
         } catch (err) {
-            console.error('Error skipping broken song', err);
+            console.error('Error auto-skipping stalled song', err);
+            // Even if the answer record fails, move on so the round isn't stuck.
+            advanceToNextQuestion(results);
         }
+    };
+
+    // Watchdog: fails the song if it never starts playing within
+    // INITIAL_BUFFER_MS, or if the playhead freezes for MID_PLAY_STALL_MS
+    // while supposedly playing (mid-clip re-buffering).
+    const startStallMonitor = () => {
+        clearStallMonitor();
+        playbackStartedAtRef.current = 0;
+        lastPlayheadRef.current = 0;
+        lastPlayheadAtRef.current = 0;
+
+        stallMonitorRef.current = setInterval(() => {
+            const audio = audioRef.current;
+            if (!audio) return;
+            const nowMs = Date.now();
+
+            try {
+                if (playbackStartedAtRef.current === 0) {
+                    playbackStartedAtRef.current = nowMs;
+                    lastPlayheadAtRef.current = nowMs;
+                }
+                if (audio.paused) {
+                    // Intentional pause (user or clip end) — reset the clock so
+                    // resuming gets a fresh stall window.
+                    lastPlayheadAtRef.current = nowMs;
+                    return;
+                }
+                const t = audio.currentTime || 0;
+                if (t !== lastPlayheadRef.current) {
+                    lastPlayheadRef.current = t;
+                    lastPlayheadAtRef.current = nowMs;
+                } else if (nowMs - lastPlayheadAtRef.current > MID_PLAY_STALL_MS) {
+                    failCurrentSong('stall');
+                }
+
+                // Never started playing at all (stuck buffering from the start)
+                if (audio.readyState < 3 && nowMs - playbackStartedAtRef.current > INITIAL_BUFFER_MS) {
+                    failCurrentSong('stall');
+                }
+            } catch { /* audio getters can throw while the element tears down */ }
+        }, 1000);
+    };
+
+    const handleSkipBrokenSong = () => {
+        if (!currentQ) return;
+        failCurrentSong('manual_skip');
     };
 
     const handleReportAndSkip = async () => {
@@ -217,6 +293,8 @@ const QuizRoundScreen = () => {
         if (!audio) return;
 
         audio.volume = volume / 100;
+        activeSrcRef.current = streamSrc;
+        startStallMonitor();
         audio.play().catch(err => {
             console.error('Failed to play audio', err);
             setAudioResolveError('Playback failed. Tap to play audio again.');
@@ -315,12 +393,31 @@ const QuizRoundScreen = () => {
         setAudioStarted(false);
         setProgress(0);
         setBuffering(false);
+        clearStallMonitor();
+        failedSongRef.current = null;
+        activeSrcRef.current = null;
         const audio = audioRef.current;
         if (audio) {
             audio.pause();
             try { audio.removeAttribute('src'); audio.load(); } catch {}
         }
     }, [currentIndex]);
+
+    // Stop watching the audio once the question has been answered.
+    useEffect(() => {
+        feedbackRef.current = feedback;
+        if (feedback) clearStallMonitor();
+    }, [feedback]);
+
+    // Save played song IDs to localStorage to avoid repeats in future rounds
+    const rememberPlayedSongs = (qs = questions) => {
+        if (!qs.length) return;
+        const playedIds = qs.map(q => q.id);
+        const existing = JSON.parse(localStorage.getItem('excludeSongIds') || '[]');
+        const merged = [...new Set([...existing, ...playedIds])];
+        // Keep last 200 to avoid unbounded growth
+        localStorage.setItem('excludeSongIds', JSON.stringify(merged.slice(-200)));
+    };
 
     return (
         <div className="max-w-2xl mx-auto mt-10 p-8 bg-white dark:bg-gray-900 rounded-xl shadow-md dark:shadow-gray-900/50">
@@ -347,7 +444,12 @@ const QuizRoundScreen = () => {
                             onWaiting={() => setBuffering(true)}
                             onPlaying={() => setBuffering(false)}
                             onEnded={() => { setProgress(100); setPlayerPaused(true); setBuffering(false); }}
-                            onError={() => { setAudioStarted(false); setAudioResolveError('Could not load audio for this song. Retry or report it.'); }}
+                            onError={() => {
+                                // Ignore errors from a stream we've already torn down.
+                                if (activeSrcRef.current !== streamSrc) return;
+                                clearStallMonitor();
+                                failCurrentSong('player_error');
+                            }}
                         />
                         <div className="w-full max-w-[400px] space-y-3">
                             <div className="flex flex-col gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 p-3">

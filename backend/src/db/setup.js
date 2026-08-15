@@ -9,8 +9,22 @@ if (!fs.existsSync(dbDir)) {
 }
 const db = new sqlite3.Database(dbPath);
 
-const initDb = () => {
+// SQLite (before 3.35) has no ALTER TABLE ... ADD COLUMN IF NOT EXISTS,
+// so add a column to an existing table only when it is missing.
+const ensureColumn = (table, column, definition) => {
   return new Promise((resolve, reject) => {
+    db.all(`PRAGMA table_info(${table})`, (err, cols) => {
+      if (err) return reject(err);
+      if (cols.some((c) => c.name === column)) return resolve();
+      db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`, (err2) =>
+        err2 ? reject(err2) : resolve()
+      );
+    });
+  });
+};
+
+const initDb = async () => {
+  await new Promise((resolve, reject) => {
     db.serialize(() => {
       // Users table
       db.run(`
@@ -38,7 +52,11 @@ const initDb = () => {
           weeks_at_1 INTEGER DEFAULT 0,
           us_popularity INTEGER DEFAULT 0,
           ca_popularity INTEGER DEFAULT 0,
-          hidden INTEGER DEFAULT 0
+          hidden INTEGER DEFAULT 0,
+          broken_audio INTEGER NOT NULL DEFAULT 0,
+          broken_audio_reason TEXT,
+          broken_audio_at DATETIME,
+          stall_count INTEGER NOT NULL DEFAULT 0
         )
       `);
 
@@ -122,6 +140,19 @@ const initDb = () => {
       });
     });
   });
+
+  // Migrations for databases created before these columns existed.
+  await ensureColumn('songs', 'youtube_id', 'TEXT');
+  await ensureColumn('songs', 'peak_position', 'INTEGER');
+  await ensureColumn('songs', 'weeks_on_chart', 'INTEGER');
+  await ensureColumn('songs', 'weeks_at_1', 'INTEGER DEFAULT 0');
+  await ensureColumn('songs', 'us_popularity', 'INTEGER DEFAULT 0');
+  await ensureColumn('songs', 'ca_popularity', 'INTEGER DEFAULT 0');
+  await ensureColumn('songs', 'hidden', 'INTEGER DEFAULT 0');
+  await ensureColumn('songs', 'broken_audio', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn('songs', 'broken_audio_reason', 'TEXT');
+  await ensureColumn('songs', 'broken_audio_at', 'DATETIME');
+  await ensureColumn('songs', 'stall_count', 'INTEGER NOT NULL DEFAULT 0');
 };
 
 module.exports = { db, initDb };

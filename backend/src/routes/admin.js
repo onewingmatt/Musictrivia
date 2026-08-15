@@ -108,6 +108,19 @@ router.post('/songs/:id/unhide', requireAdmin, (req, res) => {
     });
 });
 
+// Unflag a song auto-marked as broken audio (clears the flag + stall history)
+router.post('/songs/:id/unflag', requireAdmin, (req, res) => {
+    db.run(
+        "UPDATE songs SET broken_audio = 0, broken_audio_reason = NULL, broken_audio_at = NULL, stall_count = 0 WHERE id = ?",
+        [req.params.id],
+        function(err) {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            if (this.changes === 0) return res.status(404).json({ error: 'Song not found' });
+            res.json({ unflagged: true, song_id: parseInt(req.params.id) });
+        }
+    );
+});
+
 // Delete song permanently
 router.delete('/songs/:id', requireAdmin, async (req, res) => {
     const songId = parseInt(req.params.id);
@@ -125,7 +138,7 @@ router.delete('/songs/:id', requireAdmin, async (req, res) => {
 
 // Song lookup
 router.get('/songs/:id', requireAdmin, (req, res) => {
-    db.get("SELECT id, title, artist, genre, decade, youtube_id, audio_url, popularity, hidden FROM songs WHERE id = ?",
+    db.get("SELECT id, title, artist, genre, decade, youtube_id, audio_url, popularity, hidden, broken_audio, broken_audio_reason, broken_audio_at, stall_count FROM songs WHERE id = ?",
         [req.params.id],
         (err, song) => {
             if (err) return res.status(500).json({ error: 'Database error' });
@@ -151,7 +164,7 @@ router.get('/search', requireAdmin, (req, res) => {
 
 // Stats
 router.get('/stats', requireAdmin, (req, res) => {
-    db.get("SELECT (SELECT COUNT(*) FROM song_reports) as total, (SELECT COUNT(DISTINCT song_id) FROM song_reports) as unique_songs, (SELECT COUNT(*) FROM songs WHERE hidden = 1) as hidden_songs", [], (err, row) => {
+    db.get("SELECT (SELECT COUNT(*) FROM song_reports) as total, (SELECT COUNT(DISTINCT song_id) FROM song_reports) as unique_songs, (SELECT COUNT(*) FROM songs WHERE hidden = 1) as hidden_songs, (SELECT COUNT(*) FROM songs WHERE broken_audio = 1) as broken_songs", [], (err, row) => {
         if (err) return res.status(500).json({ error: 'Database error' });
         res.json(row);
     });

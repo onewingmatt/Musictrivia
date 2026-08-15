@@ -115,6 +115,7 @@ router.post('/generate', authenticateToken, async (req, res) => {
             decades = [],
             limit = 10,
             skip_mastered = false,
+            exclude_song_ids = [],
             min_popularity = 0,
             max_popularity = 100,
             market = 'us'
@@ -137,10 +138,12 @@ router.post('/generate', authenticateToken, async (req, res) => {
             query = `SELECT DISTINCT s.* FROM songs s
                      INNER JOIN song_sources ss ON ss.song_id = s.id
                      WHERE s.${popCol} >= ? AND s.${popCol} <= ?
+                     AND (s.broken_audio IS NULL OR s.broken_audio = 0)
                      AND ss.source IN (${activeSources.map(() => '?').join(',')})`;
             params = [min_popularity, max_popularity, ...activeSources];
         } else {
-            query = `SELECT * FROM songs s WHERE s.${popCol} >= ? AND s.${popCol} <= ?`;
+            query = `SELECT * FROM songs s WHERE s.${popCol} >= ? AND s.${popCol} <= ?
+                     AND (s.broken_audio IS NULL OR s.broken_audio = 0)`;
             params = [min_popularity, max_popularity];
         }
 
@@ -169,6 +172,13 @@ router.post('/generate', authenticateToken, async (req, res) => {
                 WHERE user_id = ? AND is_title_correct = 1 AND is_artist_correct = 1
             )`;
             params.push(req.user.userId);
+        }
+
+        // Exclude recently played song IDs (avoid repeats)
+        if (exclude_song_ids.length > 0) {
+            const placeholders = exclude_song_ids.map(() => '?').join(',');
+            query += ` AND s.id NOT IN (${placeholders})`;
+            params.push(...exclude_song_ids);
         }
 
         // Fetch more than needed for weighted sampling
@@ -277,6 +287,90 @@ router.post('/resolve-youtube', authenticateToken, (req, res) => {
             res.status(404).json({ error: 'Could not find YouTube video' });
         }
     });
+});
+
+// ---- Broken-audio tracking ----
+//
+// Evidence-based flagging: a single transient stall is not enough to
+// permanently exclude a song (cookies expire, proxies hiccup). Every stall
+// increments stall_count; broken_audio is only set once a song has stalled
+// twice, or once the server itself saw a no-data stream failure.
+//
+// Mass-failure guard: if many songs were permanently flagged within a short
+// window, it's a systemic issue (cookie expiry / YouTube blocking / proxy
+// down), not N independent broken songs. Stop permanently flagging in that
+// case so a one-hour outage can't nuke the library.
+
+const FLAG_WINDOW_MS = 10 * 60 * 1000;
+const FLAG_WINDOW_MAX = 5;
+const STALL_THRESHOLD = 2;
+
+function findSongByYoutubeId(youtubeId) {
+    return new Promise((resolve, reject) => {
+        db.get(
+            "SELECT id FROM songs WHERE youtube_id = ? OR audio_url = ? LIMIT 1",
+            [youtubeId, youtubeId],
+            (err, row) => err ? reject(err) : resolve(row || null)
+        );
+    });
+}
+
+// Records a stall for a song. Returns a promise resolving to
+// { flagged: boolean, stall_count: number }.
+function recordStall(songId, reason) {
+    return new Promise((resolve, reject) => {
+        db.run(
+            `UPDATE songs
+             SET stall_count = stall_count + 1,
+                 broken_audio_reason = ?,
+                 broken_audio_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [reason || 'unspecified', songId],
+            (err) => {
+                if (err) return reject(err);
+                db.get("SELECT stall_count FROM songs WHERE id = ?", [songId], (err2, row) => {
+                    if (err2) return reject(err2);
+                    const count = row ? row.stall_count : 1;
+                    if (count < STALL_THRESHOLD) return resolve({ flagged: false, stall_count: count });
+
+                    // Check the mass-failure guard before permanently flagging.
+                    db.get(
+                        `SELECT COUNT(*) AS c FROM songs
+                         WHERE broken_audio = 1 AND broken_audio_at > datetime('now', ?)`,
+                        ['-' + (FLAG_WINDOW_MS / 60000) + ' minutes'],
+                        (err3, wrow) => {
+                            if (err3) return reject(err3);
+                            if (wrow.c >= FLAG_WINDOW_MAX) {
+                                return resolve({ flagged: false, stall_count: count, guard: true });
+                            }
+                            db.run(
+                                `UPDATE songs
+                                 SET broken_audio = 1,
+                                     youtube_id = NULL,
+                                     audio_url = ''
+                                 WHERE id = ?`,
+                                [songId],
+                                (err4) => err4 ? reject(err4) : resolve({ flagged: true, stall_count: count })
+                            );
+                        }
+                    );
+                });
+            }
+        );
+    });
+}
+
+// Flag a song as broken (called by the client when playback stalls/errors)
+router.post('/flag-song', authenticateToken, (req, res) => {
+    const { song_id, reason } = req.body;
+    if (!song_id) return res.status(400).json({ error: 'song_id required' });
+
+    recordStall(song_id, reason || 'client_stall')
+        .then((outcome) => res.json({ ok: true, ...outcome }))
+        .catch((err) => {
+            console.error('flag-song error:', err);
+            res.status(500).json({ error: 'Database error' });
+        });
 });
 
 router.post('/answer', authenticateToken, (req, res) => {
@@ -485,6 +579,17 @@ function streamViaYtDlp(youtubeId, startSec, res) {
             res.status(502).json({ error: 'No audio data' });
             ytdlp.kill();
             if (ffmpeg) ffmpeg.kill();
+            // Server-side evidence: yt-dlp produced nothing. Flag the song so
+            // future quizzes skip it (subject to the stall threshold + guard).
+            findSongByYoutubeId(youtubeId)
+                .then((song) => {
+                    if (song) {
+                        recordStall(song.id, 'server_no_data').catch((e) =>
+                            console.error('server auto-flag failed:', e)
+                        );
+                    }
+                })
+                .catch((e) => console.error('auto-flag lookup failed:', e));
         }
     }, 15000);
     source.on('end', () => clearTimeout(noDataTimer));
