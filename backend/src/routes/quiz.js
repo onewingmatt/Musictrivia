@@ -326,8 +326,11 @@ function recordStall(songId, reason) {
                  broken_audio_at = CURRENT_TIMESTAMP
              WHERE id = ?`,
             [reason || 'unspecified', songId],
-            (err) => {
+            function (err) {
                 if (err) return reject(err);
+                if (this.changes === 0) {
+                    return resolve({ flagged: false, stall_count: 0, not_found: true });
+                }
                 db.get("SELECT stall_count FROM songs WHERE id = ?", [songId], (err2, row) => {
                     if (err2) return reject(err2);
                     const count = row ? row.stall_count : 1;
