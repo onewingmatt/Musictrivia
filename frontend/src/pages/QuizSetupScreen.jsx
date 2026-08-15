@@ -15,29 +15,56 @@ const ALL_SOURCES = [
     { id: 'wikipedia-canada-number-ones', label: 'Canadian #1s (Pre-2007)', color: 'blue' },
 ];
 
+const LAST_FILTERS_KEY = 'quizLastFilters';
+
 const QuizSetupScreen = () => {
     const navigate = useNavigate();
+
+    // Restore the last-used filter setup so returning to setup doesn't wipe it.
+    const [storedLastFilters] = useState(() => {
+        try {
+            return JSON.parse(localStorage.getItem(LAST_FILTERS_KEY) || '{}');
+        } catch {
+            return {};
+        }
+    });
+
     const [genreWeights, setGenreWeights] = useState(() => {
         const initial = {};
         ALL_GENRES.forEach(g => initial[g] = 0);
+        if (storedLastFilters.genreWeights) {
+            Object.keys(initial).forEach(g => {
+                if (storedLastFilters.genreWeights[g] !== undefined) initial[g] = storedLastFilters.genreWeights[g];
+            });
+        }
         return initial;
     });
     const [decadeWeights, setDecadeWeights] = useState(() => {
         const initial = {};
         ALL_DECADES.forEach(d => initial[d] = 0);
+        if (storedLastFilters.decadeWeights) {
+            Object.keys(initial).forEach(d => {
+                if (storedLastFilters.decadeWeights[d] !== undefined) initial[d] = storedLastFilters.decadeWeights[d];
+            });
+        }
         return initial;
     });
     const [sourceWeights, setSourceWeights] = useState(() => {
         const initial = {};
         ALL_SOURCES.forEach(s => initial[s.id] = 0);
+        if (storedLastFilters.sourceWeights) {
+            Object.keys(initial).forEach(s => {
+                if (storedLastFilters.sourceWeights[s] !== undefined) initial[s] = storedLastFilters.sourceWeights[s];
+            });
+        }
         return initial;
     });
-    const [popularityRange, setPopularityRange] = useState([50, 100]);
-    const [market, setMarket] = useState('us');
-    const [skipMastered, setSkipMastered] = useState(false);
-    const [randomStart, setRandomStart] = useState(false);
-    const [questionCount, setQuestionCount] = useState(5);
-    const [fuzzyThreshold, setFuzzyThreshold] = useState(0.25);
+    const [popularityRange, setPopularityRange] = useState(storedLastFilters.popularityRange || [50, 100]);
+    const [market, setMarket] = useState(storedLastFilters.market || 'us');
+    const [skipMastered, setSkipMastered] = useState(storedLastFilters.skipMastered ?? false);
+    const [randomStart, setRandomStart] = useState(storedLastFilters.randomStart ?? false);
+    const [questionCount, setQuestionCount] = useState(storedLastFilters.questionCount || 5);
+    const [fuzzyThreshold, setFuzzyThreshold] = useState(storedLastFilters.fuzzyThreshold ?? 0.25);
     const [loading, setLoading] = useState(false);
     const [genreCounts, setGenreCounts] = useState({});
     const [decadeCounts, setDecadeCounts] = useState({});
@@ -47,6 +74,22 @@ const QuizSetupScreen = () => {
     const [volume, setVolume] = useState(() => parseInt(localStorage.getItem('quizVolume') || '70'));
     const [clipDuration, setClipDuration] = useState(() => parseInt(localStorage.getItem('quizClipDuration') || '15'));
     const [loopClip, setLoopClip] = useState(() => localStorage.getItem('quizLoopClip') === 'true');
+
+    // Persist the filter setup on every change so the next visit restores it.
+    useEffect(() => {
+        const filters = {
+            genreWeights,
+            decadeWeights,
+            sourceWeights,
+            popularityRange,
+            market,
+            skipMastered,
+            randomStart,
+            questionCount,
+            fuzzyThreshold,
+        };
+        localStorage.setItem(LAST_FILTERS_KEY, JSON.stringify(filters));
+    }, [genreWeights, decadeWeights, sourceWeights, popularityRange, market, skipMastered, randomStart, questionCount, fuzzyThreshold]);
 
     useEffect(() => {
         api.get('/quiz/genres').then(res => {
