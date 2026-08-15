@@ -175,6 +175,18 @@ const QuizSetupScreen = () => {
 
             sessionStorage.setItem('currentQuiz', JSON.stringify(res.data.questions));
             sessionStorage.setItem('quizSettings', JSON.stringify({ randomStart, clipDuration, loopClip, fuzzyThreshold }));
+            // Keep the filter payload so a stalled song can be replaced with a
+            // fresh pick using the same settings (without restarting the round).
+            sessionStorage.setItem('quizFilters', JSON.stringify({
+                genre_weights: genreWeights,
+                decade_weights: decadeWeights,
+                source_weights: sourceWeights,
+                decades: activeDecades,
+                skip_mastered: skipMastered,
+                min_popularity: popularityRange[0],
+                max_popularity: popularityRange[1],
+                market,
+            }));
             navigate('/play');
         } catch (err) {
             console.error("Error generating quiz", err);

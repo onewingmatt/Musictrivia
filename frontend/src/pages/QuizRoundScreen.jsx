@@ -4,9 +4,9 @@ import api from '../api';
 
 // If playback hasn't started this long after tapping play, or the playhead
 // freezes this long mid-clip while supposedly playing, treat the song's audio
-// as broken and auto-skip to the next question.
-const INITIAL_BUFFER_MS = 10000;
-const MID_PLAY_STALL_MS = 5000;
+// as broken and swap in a replacement for the same question slot.
+const INITIAL_BUFFER_MS = 20000;
+const MID_PLAY_STALL_MS = 8000;
 
 const QuizRoundScreen = () => {
     const navigate = useNavigate();
@@ -159,8 +159,9 @@ const QuizRoundScreen = () => {
         }
     };
 
-    // Flag the current song as broken (best effort), record it as skipped, and
-    // move to the next question. Idempotent per question.
+    // Flag the current song as broken (best effort) and swap in a replacement
+    // for the same question slot using the round's original filters. Falls
+    // back to skipping the question only if no replacement can be found.
     const failCurrentSong = async (reason) => {
         if (!currentQ || feedbackRef.current) return;
         if (failedSongRef.current === currentQ.id) return;
@@ -168,28 +169,59 @@ const QuizRoundScreen = () => {
 
         clearStallMonitor();
 
-        // Best-effort server-side flag; never block advancing on it.
+        // Best-effort server-side flag; never block replacing on it.
         api.post('/quiz/flag-song', { song_id: currentQ.id, reason }).catch(() => { /* best effort */ });
 
         try {
-            const res = await api.post('/quiz/answer', {
+            // Re-run the round's filters, excluding every song already in the
+            // round (including the one that just failed) so we get a fresh pick.
+            const filters = JSON.parse(sessionStorage.getItem('quizFilters') || '{}');
+            const excludeIds = [...new Set(questions.map(q => q.id))];
+            const res = await api.post('/quiz/generate', {
+                ...filters,
+                exclude_song_ids: excludeIds,
+                limit: 1,
+            });
+
+            const replacement = res.data.questions && res.data.questions[0];
+            if (replacement) {
+                // Same slot, new song — the question is not burned.
+                setQuestions(prev => prev.map((q, i) => i === currentIndex ? replacement : q));
+                failedSongRef.current = null;
+                setAudioStarted(false);
+                setProgress(0);
+                setAudioResolveError('');
+                setPlayerPaused(false);
+                setBuffering(false);
+                const audio = audioRef.current;
+                if (audio) {
+                    audio.pause();
+                    try { audio.removeAttribute('src'); audio.load(); } catch {}
+                }
+                activeSrcRef.current = null;
+                return;
+            }
+
+            // No replacement available (filters too narrow) — fall back to
+            // recording a skipped answer and advancing.
+            const ans = await api.post('/quiz/answer', {
                 song_id: currentQ.id,
                 guessed_title: '',
                 guessed_artist: '',
                 fuzzy_threshold: fuzzyThreshold
             });
-
             const nextResults = [...results, {
                 question: currentQ,
-                result: { ...res.data, skipped_audio: true },
+                result: { ...ans.data, skipped_audio: true },
             }];
-
             setResults(nextResults);
             advanceToNextQuestion(nextResults);
         } catch (err) {
-            console.error('Error auto-skipping stalled song', err);
-            // Even if the answer record fails, move on so the round isn't stuck.
-            advanceToNextQuestion(results);
+            console.error('Error replacing stalled song', err);
+            // Even on failure, don't strand the round on a dead question.
+            try {
+                advanceToNextQuestion(results);
+            } catch { /* already at the end */ }
         }
     };
 
@@ -210,6 +242,7 @@ const QuizRoundScreen = () => {
             try {
                 if (playbackStartedAtRef.current === 0) {
                     playbackStartedAtRef.current = nowMs;
+                    lastPlayheadAtRef.current = 0;
                     lastPlayheadAtRef.current = nowMs;
                 }
                 if (audio.paused) {
@@ -218,16 +251,24 @@ const QuizRoundScreen = () => {
                     lastPlayheadAtRef.current = nowMs;
                     return;
                 }
+
                 const t = audio.currentTime || 0;
+                const started = audio.readyState >= 3; // HAVE_FUTURE_DATA
+
+                if (!started) {
+                    // Still waiting for the first data. Only the initial-buffer
+                    // timeout applies here — a slow stream is not a mid-play
+                    // stall, so don't let the playhead-freeze check fire early.
+                    if (nowMs - playbackStartedAtRef.current > INITIAL_BUFFER_MS) {
+                        failCurrentSong('stall');
+                    }
+                    return;
+                }
+
                 if (t !== lastPlayheadRef.current) {
                     lastPlayheadRef.current = t;
                     lastPlayheadAtRef.current = nowMs;
                 } else if (nowMs - lastPlayheadAtRef.current > MID_PLAY_STALL_MS) {
-                    failCurrentSong('stall');
-                }
-
-                // Never started playing at all (stuck buffering from the start)
-                if (audio.readyState < 3 && nowMs - playbackStartedAtRef.current > INITIAL_BUFFER_MS) {
                     failCurrentSong('stall');
                 }
             } catch { /* audio getters can throw while the element tears down */ }
